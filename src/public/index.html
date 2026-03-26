@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Radionette</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      margin-bottom: 1.5rem;
+      letter-spacing: 0.1em;
+      color: #e94560;
+    }
+
+    .status-card {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 1.5rem 2rem;
+      width: 100%;
+      max-width: 480px;
+      margin-bottom: 1rem;
+      border: 1px solid #0f3460;
+    }
+
+    .status-card h2 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #888;
+      margin-bottom: 0.8rem;
+    }
+
+    .indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #333;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+
+    .dot.on { background: #4ecca3; box-shadow: 0 0 8px #4ecca3; }
+    .dot.off { background: #555; }
+    .dot.bluetooth { background: #3b82f6; box-shadow: 0 0 8px #3b82f6; }
+    .dot.error { background: #e94560; box-shadow: 0 0 8px #e94560; }
+
+    .mode-label {
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+
+    .now-playing {
+      text-align: center;
+    }
+
+    .channel-name {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #4ecca3;
+      margin-bottom: 0.4rem;
+    }
+
+    .metadata {
+      font-size: 1rem;
+      color: #aaa;
+      font-style: italic;
+      min-height: 1.4em;
+    }
+
+    .off-message {
+      font-size: 1.2rem;
+      color: #666;
+      text-align: center;
+      padding: 1rem 0;
+    }
+
+    .gpio-raw {
+      font-family: monospace;
+      font-size: 0.9rem;
+      color: #666;
+      text-align: center;
+    }
+
+    .channel-list {
+      list-style: none;
+      font-size: 0.9rem;
+    }
+
+    .channel-list li {
+      padding: 0.3rem 0;
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid #0f3460;
+    }
+
+    .channel-list li:last-child { border-bottom: none; }
+
+    .channel-list .ch-num {
+      color: #666;
+      font-family: monospace;
+      min-width: 3em;
+    }
+
+    .channel-list .ch-name { color: #ccc; }
+
+    .channel-list li.active {
+      color: #4ecca3;
+    }
+
+    .channel-list li.active .ch-name {
+      color: #4ecca3;
+      font-weight: 600;
+    }
+
+    .connection-status {
+      position: fixed;
+      top: 0.5rem;
+      right: 0.5rem;
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      background: #333;
+    }
+
+    .connection-status.connected { background: #1a4a3a; color: #4ecca3; }
+    .connection-status.disconnected { background: #4a1a1a; color: #e94560; }
+  </style>
+</head>
+<body>
+  <h1>RADIONETTE</h1>
+
+  <div id="conn" class="connection-status disconnected">Disconnected</div>
+
+  <div class="status-card">
+    <h2>Status</h2>
+    <div class="indicator">
+      <div id="power-dot" class="dot off"></div>
+      <span class="mode-label" id="power-label">Power Off</span>
+    </div>
+    <div class="indicator">
+      <div id="bt-dot" class="dot off"></div>
+      <span class="mode-label" id="bt-label">Bluetooth Off</span>
+    </div>
+    <div class="indicator">
+      <div id="play-dot" class="dot off"></div>
+      <span class="mode-label" id="play-label">Stopped</span>
+    </div>
+  </div>
+
+  <div class="status-card now-playing" id="now-playing-card">
+    <h2>Now Playing</h2>
+    <div class="off-message" id="off-message">Power is off</div>
+    <div id="playing-info" style="display:none;">
+      <div class="channel-name" id="channel-name">-</div>
+      <div class="metadata" id="metadata">-</div>
+    </div>
+  </div>
+
+  <div class="status-card">
+    <h2>Channels</h2>
+    <ul class="channel-list" id="channel-list"></ul>
+  </div>
+
+  <div class="status-card">
+    <h2>Debug</h2>
+    <div class="gpio-raw" id="gpio-raw">GPIO: ---</div>
+    <div class="gpio-raw" id="gpio-channel">Channel: ---</div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+
+    let ws;
+    let reconnectTimer;
+
+    function connect() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}/`);
+
+      ws.onopen = () => {
+        $('conn').textContent = 'Connected';
+        $('conn').className = 'connection-status connected';
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      };
+
+      ws.onclose = () => {
+        $('conn').textContent = 'Disconnected';
+        $('conn').className = 'connection-status disconnected';
+        reconnectTimer = setTimeout(connect, 2000);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'state') update(data);
+        } catch (e) {
+          console.error('WS parse error:', e);
+        }
+      };
+    }
+
+    function update(s) {
+      // Power
+      $('power-dot').className = 'dot ' + (s.power ? 'on' : 'off');
+      $('power-label').textContent = s.power ? 'Power On' : 'Power Off';
+
+      // Bluetooth
+      $('bt-dot').className = 'dot ' + (s.bluetooth ? 'bluetooth' : 'off');
+      if (s.bluetooth && s.bluetoothDevice) {
+        $('bt-label').textContent = 'Bluetooth: ' + s.bluetoothDevice;
+      } else if (s.bluetooth) {
+        $('bt-label').textContent = 'Bluetooth Active';
+      } else {
+        $('bt-label').textContent = 'Bluetooth Off';
+      }
+
+      // Playing
+      $('play-dot').className = 'dot ' + (s.playing ? 'on' : 'off');
+      $('play-label').textContent = s.playing ? 'Playing' : 'Stopped';
+
+      // Now playing section
+      if (!s.power) {
+        $('off-message').style.display = '';
+        $('off-message').textContent = 'Power is off';
+        $('playing-info').style.display = 'none';
+      } else if (s.mode === 'bluetooth') {
+        $('off-message').style.display = '';
+        $('off-message').textContent = s.bluetoothDevice
+          ? 'Connected: ' + s.bluetoothDevice
+          : 'Waiting for connection...';
+        $('playing-info').style.display = 'none';
+      } else if (s.channel) {
+        $('off-message').style.display = 'none';
+        $('playing-info').style.display = '';
+        $('channel-name').textContent = s.channel.name;
+        $('metadata').textContent = s.metadata || 'Waiting for stream info...';
+      } else {
+        $('off-message').style.display = '';
+        $('off-message').textContent = 'No channel selected';
+        $('playing-info').style.display = 'none';
+      }
+
+      // GPIO debug
+      const bin = (s.rawGpio >>> 0).toString(2).padStart(10, '0');
+      $('gpio-raw').textContent = `GPIO: ${bin} (${s.rawGpio})`;
+      $('gpio-channel').textContent = s.channel
+        ? `Channel: ${s.channel.number} – ${s.channel.name}`
+        : 'Channel: none';
+
+      // Channel list
+      if (s.channels) {
+        const list = $('channel-list');
+        list.innerHTML = '';
+        s.channels.forEach(ch => {
+          const li = document.createElement('li');
+          if (s.channel && s.channel.number === ch.number) {
+            li.className = 'active';
+          }
+          li.innerHTML = `<span class="ch-num">${ch.number}</span><span class="ch-name">${ch.name}</span>`;
+          list.appendChild(li);
+        });
+      }
+    }
+
+    connect();
+  </script>
+</body>
+</html>

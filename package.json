@@ -1,0 +1,24 @@
+{
+  "name": "radionette",
+  "version": "1.0.0",
+  "description": "Internet radio controller for Raspberry Pi with GPIO input and web status page",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "deploy": "./deploy.sh",
+    "dev": "tsc --watch",
+    "gpio-logger": "node dist/gpio-logger.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "console-stamp": "^3.1.2",
+    "rpio": "^2.4.2",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/console-stamp": "^0.2.33",
+    "@types/node": "^25.5.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^6.0.2"
+  }
+}

@@ -1,0 +1,158 @@
+import { radioState } from "./state";
+import { lookupChannel } from "./channels";
+
+// rpio is a native module that only works on the Pi.
+// We require() it so the app can still be built on other machines
+// (it will fail at runtime if not on a Pi, which is fine).
+let rpio: any;
+try {
+  rpio = require("rpio");
+} catch {
+  rpio = null;
+}
+
+// GPIO pin assignments (BCM numbering)
+// Bits 0-7: channel selector, Bit 8: bluetooth, Bit 9: power
+const CHANNEL_PINS: readonly number[] = [18, 23, 24, 25, 8, 7, 12, 16]; // bits 0-7
+const BLUETOOTH_PIN = 20; // bit 8
+const POWER_PIN = 21; // bit 9
+
+const ALL_INPUT_PINS = [...CHANNEL_PINS, BLUETOOTH_PIN, POWER_PIN];
+
+// Output pins — indicator lights
+const POWER_LED_PIN = 11;     // Power indicator light
+const BLUETOOTH_LED_PIN = 26; // Bluetooth indicator light
+
+const POLL_INTERVAL_MS = 10;
+const DEBOUNCE_MS = 50;
+
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let prevRawValue = -1;
+let stableRawValue = -1;
+
+function readPins(): number {
+  if (!rpio) return 0;
+
+  let value = 0;
+  ALL_INPUT_PINS.forEach((pin, index) => {
+    const state = rpio.read(pin);
+    if (state === rpio.HIGH) {
+      value |= 1 << index;
+    }
+  });
+  return value;
+}
+
+function processValue(rawValue: number): void {
+  // Extract fields
+  const channelBits = rawValue & 0xff; // bits 0-7
+  const bluetoothBit = (rawValue >> 8) & 1; // bit 8
+  const powerBit = (rawValue >> 9) & 1; // bit 9
+
+  radioState.setRawGpio(rawValue);
+
+  // Power check first — if off, everything stops
+  radioState.setPower(powerBit === 1);
+  if (powerBit === 0) {
+    updateOutputs(false, false);
+    return;
+  }
+
+  // Bluetooth check — if active, radio stops
+  radioState.setBluetooth(bluetoothBit === 1);
+  if (bluetoothBit === 1) {
+    updateOutputs(true, true);
+    return;
+  }
+
+  // Radio mode — power on, bluetooth off
+  updateOutputs(true, false);
+
+  // Look up channel
+  const channel = lookupChannel(channelBits);
+  radioState.setChannel(channel);
+}
+
+function updateOutputs(power: boolean, bluetooth: boolean): void {
+  if (!rpio) return;
+  rpio.write(POWER_LED_PIN, power ? rpio.HIGH : rpio.LOW);
+  rpio.write(BLUETOOTH_LED_PIN, bluetooth ? rpio.HIGH : rpio.LOW);
+}
+
+function poll(): void {
+  const rawValue = readPins();
+
+  if (rawValue !== prevRawValue) {
+    prevRawValue = rawValue;
+
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+
+    debounceTimer = setTimeout(() => {
+      if (rawValue !== stableRawValue) {
+        stableRawValue = rawValue;
+        const binary = rawValue.toString(2).padStart(10, "0");
+        const ch = lookupChannel(rawValue & 0xff);
+        const chLabel = ch ? `${ch.number} – ${ch.name}` : "none";
+        console.log(`[GPIO] Binary: ${binary}  Decimal: ${rawValue}  Channel: ${chLabel}`);
+        processValue(rawValue);
+      }
+    }, DEBOUNCE_MS);
+  }
+}
+
+export function startGpio(): void {
+  if (!rpio) {
+    console.warn(
+      "[GPIO] rpio not available — running without GPIO (dev mode)"
+    );
+    // In dev mode, set a default state so the web UI has something to show
+    radioState.setPower(true);
+    radioState.setBluetooth(false);
+    return;
+  }
+
+  console.log("[GPIO] Initializing pins...");
+  rpio.init({ mapping: "gpio" });
+
+  // Set up input pins with pull-down resistors
+  ALL_INPUT_PINS.forEach((pin) => {
+    rpio.open(pin, rpio.INPUT, rpio.PULL_DOWN);
+    console.log(`[GPIO] Pin ${pin} ready (INPUT, PULL_DOWN)`);
+  });
+
+  // Set up output pins
+  rpio.open(POWER_LED_PIN, rpio.OUTPUT, rpio.LOW);
+  console.log(`[GPIO] Pin ${POWER_LED_PIN} ready (OUTPUT, Power LED)`);
+  rpio.open(BLUETOOTH_LED_PIN, rpio.OUTPUT, rpio.LOW);
+  console.log(`[GPIO] Pin ${BLUETOOTH_LED_PIN} ready (OUTPUT, Bluetooth LED)`);
+
+  console.log("[GPIO] Starting poll loop...");
+  pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+}
+
+export function stopGpio(): void {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+
+  if (!rpio) return;
+
+  console.log("[GPIO] Cleaning up pins...");
+  rpio.write(POWER_LED_PIN, rpio.LOW);
+  rpio.write(BLUETOOTH_LED_PIN, rpio.LOW);
+
+  ALL_INPUT_PINS.forEach((pin) => {
+    rpio.close(pin);
+  });
+  rpio.close(POWER_LED_PIN);
+  rpio.close(BLUETOOTH_LED_PIN);
+  console.log("[GPIO] Cleanup complete.");
+}
