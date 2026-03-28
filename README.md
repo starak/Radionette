@@ -30,7 +30,7 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 | 12 | Input | Channel bit 6 |
 | 16 | Input | Channel bit 7 |
 | 20 | Input | Bluetooth mode |
-| 21 | Input | Power |
+| 21 | Input | Power indicator |
 | 11 | Output | Power LED |
 | 26 | Output | Bluetooth LED |
 
