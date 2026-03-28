@@ -7,7 +7,7 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 - **Radio mode:** A rotary dial switch selects from 15+ internet radio stations via GPIO. Audio plays through the Pi's 3.5mm jack or HDMI.
 - **Bluetooth mode:** The Pi becomes a discoverable Bluetooth speaker called "Radionette" (with a speaker icon on your phone). Pair and stream music from any device.
 - **Web status page:** A live dashboard at `http://radionette/` shows current station, now-playing metadata, and Bluetooth status. Tab navigation links to WiFi settings and a debug page.
-- **WiFi configuration:** If the Pi can't connect to a known WiFi network at boot, it creates a hotspot (`Radionette-Setup`). Connect to the hotspot and visit the built-in WiFi settings page to configure a network. WiFi settings are always accessible at `http://radionette/wifi`.
+- **WiFi configuration:** If the Pi can't connect to a known WiFi network at boot, it creates a hotspot (`Radionette-Setup`, password `radionette`). Connect to the hotspot and visit `http://10.42.0.1/wifi` to configure a network. WiFi settings are also always accessible at `http://radionette/wifi` when connected to the same network.
 - **Debug page:** A live view of GPIO bit state, decoded bank/sub-channel values, full state dump, and grouped channel map at `http://radionette/debug`.
 
 ## Hardware
