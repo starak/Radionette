@@ -46,8 +46,9 @@ Power ON + Bluetooth OFF
 | `src/bluetooth.ts` | Full Bluetooth A2DP sink management — enable/disable adapter, pairing agent, device monitoring, volume boost, flap detection, auto-reconnect, notification sounds. |
 | `src/web.ts` | HTTP server (port 80) + WebSocket. Serves status page, WiFi settings page, and WiFi API endpoints. Pushes live state to all connected clients. |
 | `src/wifi.ts` | WiFi management via `nmcli` — scan for networks, connect, start/stop hotspot. Falls back to mock data in dev mode. |
-| `src/public/index.html` | Single-file status page with inline CSS/JS. Dark theme, live WebSocket updates. Shows BT device name when connected. Link to WiFi settings. |
-| `src/public/wifi.html` | Single-file WiFi settings page with inline CSS/JS. Dark theme, network scan list with signal bars, connect modal with password field, AP-mode warning. |
+| `src/public/index.html` | Single-file status page with inline CSS/JS. Dark theme (neutral grey palette via CSS custom properties), live WebSocket updates, tab navigation (Status / WiFi / Debug). Channel list grouped by bank with bank headers. |
+| `src/public/wifi.html` | Single-file WiFi settings page with inline CSS/JS. Same dark theme, tab navigation. Network scan list with signal bars, connect modal with password field, AP-mode warning. |
+| `src/public/debug.html` | Single-file debug page with inline CSS/JS. Same dark theme, tab navigation. Color-coded GPIO bit display (green=power, blue=bluetooth, amber=bank/sub), decoded bank/sub values, full state dump table, grouped channel map. Live WebSocket updates. |
 | `src/gpio-logger.ts` | Standalone utility — logs raw GPIO values on change for mapping physical dial positions. |
 | `channels.json` | Channel configuration — maps dial position numbers to station name + stream URL. Edit this to change stations. |
 | `wifi-fallback.sh` | Boot script — waits 30s for WiFi, starts hotspot if no connection. Installed as a systemd service by `setup-pi.sh`. |
@@ -73,11 +74,22 @@ Events emitted by state.ts:
 
 ### Channel Config
 
-`channels.json` maps GPIO bits 0-7 decimal values to streams. The dial has two banks sharing 5 center positions:
+`channels.json` maps GPIO bits 0-7 decimal values to streams. The channel number is composed of two nibbles:
 
-- **Shared (center):** 224, 225, 232, 234, 236
-- **Bank A:** 140, 138, 136, 129, 128
-- **Bank B:** 124, 122, 120, 113, 112
+- **Bits 7-4:** Bank selector (hardware value -> label)
+  - `12` (0b1100) = Bank 1: NRK P1, P1+, P2, Klassisk, Nyheter
+  - `8` (0b1000) = Bank 2: NRK P3, P3 Musikk, P13, mP3, Jazz
+  - `10` (0b1010) = Bank 3: NRK Folkemusikk, Sámi Radio, P4, P5, P7
+  - `3` (0b0011) = Bank 4: Radio Rock, IRock 247, P11 Bandit, NRJ, P10 Country
+
+- **Bits 3-0:** Sub-channel selector (hardware value -> label)
+  - `0` (0b0000) = Sub 1
+  - `1` (0b0001) = Sub 2
+  - `8` (0b1000) = Sub 3
+  - `10` (0b1010) = Sub 4
+  - `12` (0b1100) = Sub 5
+
+Example: Channel key `192` = 0b**1100**_0000 = Bank 1 (`12`), Sub 1 (`0`) = NRK P1.
 
 Add any HTTP/MP3 stream URL. No rebuild needed — just edit the file and restart.
 
@@ -121,11 +133,29 @@ Uses absolute path `/usr/bin/nmcli`. The hotspot connection profile (`radionette
 | Method | Path | Description |
 |---|---|---|
 | GET | `/wifi` | WiFi settings HTML page |
+| GET | `/debug` | Debug HTML page |
 | GET | `/api/wifi/status` | JSON: `{ connected, ssid, ip, hotspotActive }` |
 | GET | `/api/wifi/scan` | JSON: `[{ ssid, signal, security, active }]` |
 | POST | `/api/wifi/connect` | JSON body: `{ ssid, password }` → `{ success, error? }` |
 
 **Pi 3 compatibility:** The BCM43438 WiFi chip on the Pi 3 Model B supports AP mode. Both Pi 3 and Pi 4 support simultaneous AP + managed on the same channel, but the implementation uses a simpler approach: stop AP → connect → restart AP if connection fails.
+
+### Web UI Conventions
+
+All HTML pages are single-file with inline CSS and JS (no external dependencies). They share:
+
+- **Dark theme** with neutral grey palette via CSS custom properties in `:root`:
+  ```css
+  --bg: #1a1a1a; --bg-card: #252525; --bg-hover: #2e2e2e;
+  --border: #333; --text: #ddd; --text-sec: #999;
+  --text-muted: #777; --text-dim: #666; --dot-off: #4a4a4a;
+  --accent: #7daf8b; --accent-bg: #2a3a2e; --blue: #6b8db5;
+  --red: #c0392b; --red-bg: #3a2a2a; --amber: #c9a84c; --amber-bg: #332e1a;
+  ```
+- **Tab navigation** below the title: `Status | WiFi | Debug` — active tab highlighted in `--accent` with underline
+- **Title:** `<h1><a href="/">RADIONETTE</a></h1>` (white `#fff`)
+- **Cards:** `.status-card` or `.card` class — dark card with rounded corners and border
+- **Channel lists** are sorted and grouped by bank (1-4) with amber bank headers, sub-channel number (1-5) shown instead of raw GPIO values
 
 ## Development
 
@@ -223,7 +253,7 @@ PulseAudio should run as the desktop user on login (default on Raspberry Pi OS w
 ```
 ~/code/
   dist/           # Compiled JS (deployed from dev machine)
-    public/       # index.html, wifi.html
+    public/       # index.html, wifi.html, debug.html
   assets/         # Sound files (bt-connect.wav, bt-ready.wav)
   channels.json   # Channel configuration
   wifi-fallback.sh # Boot fallback AP script

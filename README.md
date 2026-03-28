@@ -6,8 +6,9 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 
 - **Radio mode:** A rotary dial switch selects from 15+ internet radio stations via GPIO. Audio plays through the Pi's 3.5mm jack or HDMI.
 - **Bluetooth mode:** The Pi becomes a discoverable Bluetooth speaker called "Radionette" (with a speaker icon on your phone). Pair and stream music from any device.
-- **Web status page:** A live dashboard at `http://radionette/` shows current station, now-playing metadata, and Bluetooth status.
+- **Web status page:** A live dashboard at `http://radionette/` shows current station, now-playing metadata, and Bluetooth status. Tab navigation links to WiFi settings and a debug page.
 - **WiFi configuration:** If the Pi can't connect to a known WiFi network at boot, it creates a hotspot (`Radionette-Setup`). Connect to the hotspot and visit the built-in WiFi settings page to configure a network. WiFi settings are always accessible at `http://radionette/wifi`.
+- **Debug page:** A live view of GPIO bit state, decoded bank/sub-channel values, full state dump, and grouped channel map at `http://radionette/debug`.
 
 ## Hardware
 
@@ -118,6 +119,7 @@ The WiFi settings page is always available at `http://radionette/wifi`, not just
 | Method | Path | Description |
 |---|---|---|
 | GET | `/wifi` | WiFi settings page |
+| GET | `/debug` | Debug page (GPIO bits, state, channel map) |
 | GET | `/api/wifi/status` | Current WiFi status (JSON) |
 | GET | `/api/wifi/scan` | Scan for available networks (JSON) |
 | POST | `/api/wifi/connect` | Connect to a network (`{ "ssid": "...", "password": "..." }`) |
@@ -143,18 +145,18 @@ Some files contain settings specific to this setup that you'll want to adapt:
 
 ## Configuring Stations
 
-Edit `channels.json` to add or change radio stations. Each entry maps a dial position (GPIO decimal value) to a station:
+Edit `channels.json` to add or change radio stations. Each entry maps a dial position (GPIO bits 0-7 decimal value) to a station:
 
 ```json
 {
-  "channels": [
-    { "number": 192, "name": "NRK P1", "url": "https://lyd.nrk.no/nrk_radio_p1_ostlandssendingen_mp3_h" },
-    { "number": 48, "name": "Radio Rock", "url": "https://live-bauerno.sharp-stream.com/simulcast3_no.mp3" }
-  ]
+  "channels": {
+    "192": { "name": "NRK P1", "url": "https://lyd.nrk.no/..." },
+    "48":  { "name": "Radio Rock", "url": "https://live-bauerno.sharp-stream.com/..." }
+  }
 }
 ```
 
-No rebuild needed — just edit the file and run `npm run deploy`.
+The channel number is composed of two nibbles: bits 7-4 select the bank, bits 3-0 select the sub-channel within the bank. See the debug page (`/debug`) for a visual breakdown.
 
 ## Project Structure
 
@@ -172,6 +174,7 @@ radionette/
     public/
       index.html      # Status page (single-file, inline CSS/JS)
       wifi.html       # WiFi settings page (single-file, inline CSS/JS)
+      debug.html      # Debug page (GPIO bits, state dump, channel map)
     gpio-logger.ts    # Utility for mapping dial positions
   assets/
     bt-connect.wav    # Sound: device connected
