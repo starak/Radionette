@@ -5,12 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Radionette</title>
   <style>
+    :root {
+      --bg:         #1a1a1a;
+      --bg-card:    #252525;
+      --bg-hover:   #2e2e2e;
+      --border:     #333;
+      --text:       #ddd;
+      --text-sec:   #999;
+      --text-muted: #777;
+      --text-dim:   #666;
+      --dot-off:    #4a4a4a;
+      --accent:     #7daf8b;
+      --accent-bg:  #2a3a2e;
+      --blue:       #6b8db5;
+      --red:        #c0392b;
+      --red-bg:     #3a2a2a;
+      --amber:      #c9a84c;
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
-      background: #1a1a2e;
-      color: #eee;
+      background: var(--bg);
+      color: var(--text);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
@@ -20,26 +38,47 @@
 
     h1 {
       font-size: 1.8rem;
-      margin-bottom: 1.5rem;
+      margin-bottom: 0.3rem;
       letter-spacing: 0.1em;
-      color: #e94560;
+      color: #fff;
     }
 
+    h1 a { color: inherit; text-decoration: none; }
+
+    .tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tab {
+      padding: 0.5rem 1.2rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
     .status-card {
-      background: #16213e;
+      background: var(--bg-card);
       border-radius: 12px;
       padding: 1.5rem 2rem;
       width: 100%;
       max-width: 480px;
       margin-bottom: 1rem;
-      border: 1px solid #0f3460;
+      border: 1px solid var(--border);
     }
 
     .status-card h2 {
       font-size: 0.85rem;
       text-transform: uppercase;
       letter-spacing: 0.1em;
-      color: #888;
+      color: var(--text-muted);
       margin-bottom: 0.8rem;
     }
 
@@ -54,15 +93,15 @@
       width: 12px;
       height: 12px;
       border-radius: 50%;
-      background: #333;
+      background: var(--dot-off);
       flex-shrink: 0;
       transition: background 0.3s;
     }
 
-    .dot.on { background: #4ecca3; box-shadow: 0 0 8px #4ecca3; }
-    .dot.off { background: #555; }
-    .dot.bluetooth { background: #3b82f6; box-shadow: 0 0 8px #3b82f6; }
-    .dot.error { background: #e94560; box-shadow: 0 0 8px #e94560; }
+    .dot.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+    .dot.off { background: var(--dot-off); }
+    .dot.bluetooth { background: var(--blue); box-shadow: 0 0 8px var(--blue); }
+    .dot.error { background: var(--red); box-shadow: 0 0 8px var(--red); }
 
     .mode-label {
       font-size: 1.1rem;
@@ -76,29 +115,22 @@
     .channel-name {
       font-size: 1.6rem;
       font-weight: 700;
-      color: #4ecca3;
+      color: var(--accent);
       margin-bottom: 0.4rem;
     }
 
     .metadata {
       font-size: 1rem;
-      color: #aaa;
+      color: var(--text-sec);
       font-style: italic;
       min-height: 1.4em;
     }
 
     .off-message {
       font-size: 1.2rem;
-      color: #666;
+      color: var(--text-dim);
       text-align: center;
       padding: 1rem 0;
-    }
-
-    .gpio-raw {
-      font-family: monospace;
-      font-size: 0.9rem;
-      color: #666;
-      text-align: center;
     }
 
     .channel-list {
@@ -110,27 +142,40 @@
       padding: 0.3rem 0;
       display: flex;
       justify-content: space-between;
-      border-bottom: 1px solid #0f3460;
+      border-bottom: 1px solid var(--border);
     }
 
     .channel-list li:last-child { border-bottom: none; }
 
     .channel-list .ch-num {
-      color: #666;
+      color: var(--text-dim);
       font-family: monospace;
-      min-width: 3em;
+      min-width: 2em;
     }
 
-    .channel-list .ch-name { color: #ccc; }
+    .channel-list .ch-name { color: var(--text-sec); }
 
     .channel-list li.active {
-      color: #4ecca3;
+      color: var(--accent);
     }
 
     .channel-list li.active .ch-name {
-      color: #4ecca3;
+      color: var(--accent);
       font-weight: 600;
     }
+
+    .channel-list .bank-header {
+      color: var(--amber);
+      font-family: monospace;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.6rem 0 0.2rem;
+      border-bottom: 1px solid var(--border);
+      display: block;
+    }
+
+    .channel-list .bank-header:first-child { padding-top: 0; }
 
     .connection-status {
       position: fixed;
@@ -139,15 +184,20 @@
       font-size: 0.75rem;
       padding: 0.25rem 0.5rem;
       border-radius: 4px;
-      background: #333;
+      background: var(--border);
     }
 
-    .connection-status.connected { background: #1a4a3a; color: #4ecca3; }
-    .connection-status.disconnected { background: #4a1a1a; color: #e94560; }
+    .connection-status.connected { background: var(--accent-bg); color: var(--accent); }
+    .connection-status.disconnected { background: var(--red-bg); color: var(--red); }
   </style>
 </head>
 <body>
-  <h1>RADIONETTE</h1>
+  <h1><a href="/">RADIONETTE</a></h1>
+  <nav class="tabs">
+    <a href="/" class="tab active">Status</a>
+    <a href="/wifi" class="tab">WiFi</a>
+    <a href="/debug" class="tab">Debug</a>
+  </nav>
 
   <div id="conn" class="connection-status disconnected">Disconnected</div>
 
@@ -179,12 +229,6 @@
   <div class="status-card">
     <h2>Channels</h2>
     <ul class="channel-list" id="channel-list"></ul>
-  </div>
-
-  <div class="status-card">
-    <h2>Debug</h2>
-    <div class="gpio-raw" id="gpio-raw">GPIO: ---</div>
-    <div class="gpio-raw" id="gpio-channel">Channel: ---</div>
   </div>
 
   <script>
@@ -264,23 +308,37 @@
         $('playing-info').style.display = 'none';
       }
 
-      // GPIO debug
-      const bin = (s.rawGpio >>> 0).toString(2).padStart(10, '0');
-      $('gpio-raw').textContent = `GPIO: ${bin} (${s.rawGpio})`;
-      $('gpio-channel').textContent = s.channel
-        ? `Channel: ${s.channel.number} – ${s.channel.name}`
-        : 'Channel: none';
+      // Channel list — sorted and grouped by bank
+      const bankMap = { 12: 1, 8: 2, 10: 3, 3: 4 };
+      const subMap = { 0: 1, 1: 2, 8: 3, 10: 4, 12: 5 };
 
-      // Channel list
       if (s.channels) {
         const list = $('channel-list');
         list.innerHTML = '';
-        s.channels.forEach(ch => {
+        const sorted = s.channels.slice().sort((a, b) => {
+          const aBank = bankMap[(a.number >> 4) & 0xF] || 99;
+          const bBank = bankMap[(b.number >> 4) & 0xF] || 99;
+          if (aBank !== bBank) return aBank - bBank;
+          const aSub = subMap[a.number & 0xF] || 99;
+          const bSub = subMap[b.number & 0xF] || 99;
+          return aSub - bSub;
+        });
+        let lastBank = null;
+        sorted.forEach(ch => {
+          const bLabel = bankMap[(ch.number >> 4) & 0xF] || '?';
+          const sLabel = subMap[ch.number & 0xF] || '?';
+          if (bLabel !== lastBank) {
+            const hdr = document.createElement('li');
+            hdr.className = 'bank-header';
+            hdr.textContent = 'Bank ' + bLabel;
+            list.appendChild(hdr);
+            lastBank = bLabel;
+          }
           const li = document.createElement('li');
           if (s.channel && s.channel.number === ch.number) {
             li.className = 'active';
           }
-          li.innerHTML = `<span class="ch-num">${ch.number}</span><span class="ch-name">${ch.name}</span>`;
+          li.innerHTML = `<span class="ch-num">${sLabel}</span><span class="ch-name">${ch.name}</span>`;
           list.appendChild(li);
         });
       }

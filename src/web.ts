@@ -4,6 +4,7 @@ import * as path from "path";
 import { WebSocketServer, WebSocket } from "ws";
 import { radioState, RadioState } from "./state";
 import { getAllChannels } from "./channels";
+import { getWifiStatus, scanNetworks, connectToNetwork } from "./wifi";
 
 const PORT = 80;
 
@@ -32,7 +33,7 @@ export function startWebServer(): void {
   // In dist, public/ sits next to the JS files
   const publicDir = path.resolve(__dirname, "public");
 
-  server = http.createServer((req, res) => {
+  server = http.createServer(async (req, res) => {
     if (req.url === "/" || req.url === "/index.html") {
       const htmlPath = path.join(publicDir, "index.html");
       fs.readFile(htmlPath, "utf-8", (err, data) => {
@@ -56,6 +57,83 @@ export function startWebServer(): void {
     if (req.url === "/api/channels") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(getAllChannels()));
+      return;
+    }
+
+    if (req.url === "/debug" || req.url === "/debug.html") {
+      const htmlPath = path.join(publicDir, "debug.html");
+      fs.readFile(htmlPath, "utf-8", (err, data) => {
+        if (err) {
+          res.writeHead(500, { "Content-Type": "text/plain" });
+          res.end("Failed to load debug page");
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(data);
+      });
+      return;
+    }
+
+    // --- WiFi routes ---
+
+    if (req.url === "/wifi" || req.url === "/wifi.html") {
+      const htmlPath = path.join(publicDir, "wifi.html");
+      fs.readFile(htmlPath, "utf-8", (err, data) => {
+        if (err) {
+          res.writeHead(500, { "Content-Type": "text/plain" });
+          res.end("Failed to load WiFi settings page");
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(data);
+      });
+      return;
+    }
+
+    if (req.url === "/api/wifi/status" && req.method === "GET") {
+      try {
+        const status = await getWifiStatus();
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(status));
+      } catch (err: any) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    if (req.url === "/api/wifi/scan" && req.method === "GET") {
+      try {
+        const networks = await scanNetworks();
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(networks));
+      } catch (err: any) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    if (req.url === "/api/wifi/connect" && req.method === "POST") {
+      // Read JSON body manually (no Express)
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", async () => {
+        try {
+          const { ssid, password } = JSON.parse(body);
+          if (!ssid || typeof ssid !== "string") {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ success: false, error: "Missing SSID" }));
+            return;
+          }
+          const result = await connectToNetwork(ssid, password || "");
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(result));
+        } catch (err: any) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: false, error: err.message }));
+        }
+      });
       return;
     }
 

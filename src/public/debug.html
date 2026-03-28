@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Radionette — Debug</title>
+  <style>
+    :root {
+      --bg:         #1a1a1a;
+      --bg-card:    #252525;
+      --bg-hover:   #2e2e2e;
+      --border:     #333;
+      --text:       #ddd;
+      --text-sec:   #999;
+      --text-muted: #777;
+      --text-dim:   #666;
+      --dot-off:    #4a4a4a;
+      --accent:     #7daf8b;
+      --accent-bg:  #2a3a2e;
+      --blue:       #6b8db5;
+      --red:        #c0392b;
+      --red-bg:     #3a2a2a;
+      --amber:      #c9a84c;
+      --amber-bg:   #332e1a;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      margin-bottom: 0.3rem;
+      letter-spacing: 0.1em;
+      color: #fff;
+    }
+
+    h1 a { color: inherit; text-decoration: none; }
+
+    .tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tab {
+      padding: 0.5rem 1.2rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .card {
+      background: var(--bg-card);
+      border-radius: 12px;
+      padding: 1.5rem 2rem;
+      width: 100%;
+      max-width: 480px;
+      margin-bottom: 1rem;
+      border: 1px solid var(--border);
+    }
+
+    .card h2 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 0.8rem;
+    }
+
+    .debug-row {
+      font-family: monospace;
+      font-size: 0.9rem;
+      color: var(--text-dim);
+      padding: 0.3rem 0;
+    }
+
+    .debug-row .label {
+      color: var(--text-muted);
+    }
+
+    .debug-row .value {
+      color: var(--text);
+    }
+
+    .bit-display {
+      display: flex;
+      gap: 2px;
+      margin: 0.6rem 0 0.2rem;
+      justify-content: center;
+    }
+
+    .bit-group {
+      display: flex;
+      gap: 2px;
+    }
+
+    .bit-group + .bit-group { margin-left: 6px; }
+
+    .bit {
+      width: 28px;
+      height: 28px;
+      border-radius: 4px;
+      background: var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .bit.on-green {
+      background: var(--accent-bg);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+
+    .bit.on-blue {
+      background: rgba(107,141,181,0.15);
+      color: var(--blue);
+      border: 1px solid var(--blue);
+    }
+
+    .bit.on-amber {
+      background: var(--amber-bg);
+      color: var(--amber);
+      border: 1px solid var(--amber);
+    }
+
+    .bit-labels {
+      display: flex;
+      gap: 2px;
+      justify-content: center;
+      margin-bottom: 0.8rem;
+    }
+
+    .bit-label-group {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: monospace;
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .bit-label-group + .bit-label-group { margin-left: 6px; }
+
+    .bit-label-group.lbl-green { color: var(--accent); }
+    .bit-label-group.lbl-blue { color: var(--blue); }
+    .bit-label-group.lbl-amber { color: var(--amber); }
+
+    .decoded-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: monospace;
+      font-size: 0.85rem;
+      padding: 0.35rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .decoded-row:last-child { border-bottom: none; }
+
+    .decoded-label { color: var(--text-muted); }
+    .decoded-value { color: var(--text); font-weight: 600; }
+    .decoded-value.clr-green { color: var(--accent); }
+    .decoded-value.clr-blue { color: var(--blue); }
+    .decoded-value.clr-amber { color: var(--amber); }
+
+    .state-table {
+      width: 100%;
+      font-size: 0.85rem;
+      border-collapse: collapse;
+    }
+
+    .state-table tr {
+      border-bottom: 1px solid var(--border);
+    }
+
+    .state-table tr:last-child { border-bottom: none; }
+
+    .state-table td {
+      padding: 0.4rem 0.3rem;
+    }
+
+    .state-table .key {
+      color: var(--text-muted);
+      font-family: monospace;
+      white-space: nowrap;
+      width: 40%;
+    }
+
+    .state-table .val {
+      color: var(--text);
+      word-break: break-all;
+    }
+
+    .state-table .bank-header {
+      color: var(--amber);
+      font-family: monospace;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.6rem 0.3rem 0.2rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .state-table tr:first-child .bank-header { padding-top: 0; }
+
+    .connection-status {
+      position: fixed;
+      top: 0.5rem;
+      right: 0.5rem;
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      background: var(--border);
+    }
+
+    .connection-status.connected { background: var(--accent-bg); color: var(--accent); }
+    .connection-status.disconnected { background: var(--red-bg); color: var(--red); }
+  </style>
+</head>
+<body>
+  <h1><a href="/">RADIONETTE</a></h1>
+  <nav class="tabs">
+    <a href="/" class="tab">Status</a>
+    <a href="/wifi" class="tab">WiFi</a>
+    <a href="/debug" class="tab active">Debug</a>
+  </nav>
+
+  <div id="conn" class="connection-status disconnected">Disconnected</div>
+
+  <!-- GPIO raw values -->
+  <div class="card">
+    <h2>GPIO Input</h2>
+    <div class="bit-display" id="bit-display"></div>
+    <div class="bit-labels">
+      <div class="bit-label-group lbl-green" style="width:28px">pwr</div>
+      <div class="bit-label-group lbl-blue" style="width:28px">bt</div>
+      <div class="bit-label-group lbl-amber" style="width:118px">bank [7:4]</div>
+      <div class="bit-label-group lbl-amber" style="width:118px">sub [3:0]</div>
+    </div>
+    <div id="decoded-fields">
+      <div class="decoded-row">
+        <span class="decoded-label">Power (bit 9)</span>
+        <span class="decoded-value" id="dec-power">---</span>
+      </div>
+      <div class="decoded-row">
+        <span class="decoded-label">Bluetooth (bit 8)</span>
+        <span class="decoded-value" id="dec-bt">---</span>
+      </div>
+      <div class="decoded-row">
+        <span class="decoded-label">Bank [7:4]</span>
+        <span class="decoded-value" id="dec-bank">---</span>
+      </div>
+      <div class="decoded-row">
+        <span class="decoded-label">Sub [3:0]</span>
+        <span class="decoded-value" id="dec-sub">---</span>
+      </div>
+      <div class="decoded-row">
+        <span class="decoded-label">Raw decimal</span>
+        <span class="decoded-value" id="dec-raw">---</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Current channel -->
+  <div class="card">
+    <h2>Channel</h2>
+    <div class="debug-row" id="ch-number">
+      <span class="label">Number:</span> <span class="value">---</span>
+    </div>
+    <div class="debug-row" id="ch-name">
+      <span class="label">Name:</span> <span class="value">---</span>
+    </div>
+    <div class="debug-row" id="ch-url">
+      <span class="label">URL:</span> <span class="value">---</span>
+    </div>
+  </div>
+
+  <!-- Full state dump -->
+  <div class="card">
+    <h2>State</h2>
+    <table class="state-table" id="state-table">
+      <tr><td class="key">Waiting...</td><td class="val"></td></tr>
+    </table>
+  </div>
+
+  <!-- Channel map -->
+  <div class="card">
+    <h2>Channel Map</h2>
+    <table class="state-table" id="channel-map">
+      <tr><td class="key">Loading...</td><td class="val"></td></tr>
+    </table>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+
+    let ws;
+    let reconnectTimer;
+
+    function connect() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}/`);
+
+      ws.onopen = () => {
+        $('conn').textContent = 'Connected';
+        $('conn').className = 'connection-status connected';
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      };
+
+      ws.onclose = () => {
+        $('conn').textContent = 'Disconnected';
+        $('conn').className = 'connection-status disconnected';
+        reconnectTimer = setTimeout(connect, 2000);
+      };
+
+      ws.onerror = () => { ws.close(); };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'state') update(data);
+        } catch (e) {
+          console.error('WS parse error:', e);
+        }
+      };
+    }
+
+    function update(s) {
+      const raw = s.rawGpio || 0;
+      const bin = (raw >>> 0).toString(2).padStart(10, '0');
+
+      // Bit groups: [9]=power, [8]=bluetooth, [7:4]=bank, [3:0]=sub
+      // bin string index: 0=bit9, 1=bit8, 2-5=bits7-4, 6-9=bits3-0
+      const bitDiv = $('bit-display');
+      bitDiv.innerHTML = '';
+
+      const groups = [
+        { bits: bin.slice(0, 1), color: 'green' },   // bit 9: power
+        { bits: bin.slice(1, 2), color: 'blue' },     // bit 8: bluetooth
+        { bits: bin.slice(2, 6), color: 'amber' },    // bits 7-4: bank
+        { bits: bin.slice(6, 10), color: 'amber' },   // bits 3-0: sub
+      ];
+
+      groups.forEach((g, gi) => {
+        const grp = document.createElement('div');
+        grp.className = 'bit-group';
+        for (let i = 0; i < g.bits.length; i++) {
+          const el = document.createElement('div');
+          el.className = 'bit' + (g.bits[i] === '1' ? ' on-' + g.color : '');
+          el.textContent = g.bits[i];
+          grp.appendChild(el);
+        }
+        bitDiv.appendChild(grp);
+      });
+
+      // Hardware-to-label mappings
+      const bankMap = { 12: 1, 8: 2, 10: 3, 3: 4 };
+      const subMap = { 0: 1, 1: 2, 8: 3, 10: 4, 12: 5 };
+
+      // Decoded values
+      const power = (raw >> 9) & 1;
+      const bt = (raw >> 8) & 1;
+      const bankRaw = (raw >> 4) & 0xF;
+      const subRaw = raw & 0xF;
+      const bankLabel = bankMap[bankRaw];
+      const subLabel = subMap[subRaw];
+
+      $('dec-power').textContent = power ? 'ON' : 'OFF';
+      $('dec-power').className = 'decoded-value' + (power ? ' clr-green' : '');
+      $('dec-bt').textContent = bt ? 'ON' : 'OFF';
+      $('dec-bt').className = 'decoded-value' + (bt ? ' clr-blue' : '');
+      $('dec-bank').textContent = bankLabel ? 'Bank ' + bankLabel : 'unknown (' + bankRaw + ')';
+      $('dec-bank').className = 'decoded-value clr-amber';
+      $('dec-sub').textContent = subLabel ? 'Sub ' + subLabel : 'unknown (' + subRaw + ')';
+      $('dec-sub').className = 'decoded-value clr-amber';
+      $('dec-raw').textContent = raw;
+
+      // Channel info
+      if (s.channel) {
+        $('ch-number').querySelector('.value').textContent = s.channel.number;
+        $('ch-name').querySelector('.value').textContent = s.channel.name;
+        $('ch-url').querySelector('.value').textContent = s.channel.url || '—';
+      } else {
+        $('ch-number').querySelector('.value').textContent = 'none';
+        $('ch-name').querySelector('.value').textContent = '—';
+        $('ch-url').querySelector('.value').textContent = '—';
+      }
+
+      // Full state table
+      const stateTable = $('state-table');
+      const stateKeys = ['power', 'mode', 'playing', 'bluetooth', 'bluetoothDevice', 'metadata', 'rawGpio'];
+      let rows = '';
+      stateKeys.forEach(k => {
+        const v = s[k];
+        const display = v === undefined ? '—' : v === null ? 'null' : String(v);
+        rows += '<tr><td class="key">' + k + '</td><td class="val">' + escHtml(display) + '</td></tr>';
+      });
+      stateTable.innerHTML = rows;
+
+      // Channel map — show bank:sub labels, sorted by bank then sub, grouped
+      if (s.channels) {
+        const mapTable = $('channel-map');
+        const sorted = s.channels.slice().sort((a, b) => {
+          const aBank = bankMap[(a.number >> 4) & 0xF] || 99;
+          const bBank = bankMap[(b.number >> 4) & 0xF] || 99;
+          if (aBank !== bBank) return aBank - bBank;
+          const aSub = subMap[a.number & 0xF] || 99;
+          const bSub = subMap[b.number & 0xF] || 99;
+          return aSub - bSub;
+        });
+        let mrows = '';
+        let lastBank = null;
+        sorted.forEach(ch => {
+          const active = s.channel && s.channel.number === ch.number;
+          const b = (ch.number >> 4) & 0xF;
+          const sb = ch.number & 0xF;
+          const bLabel = bankMap[b] || '?';
+          const sLabel = subMap[sb] || '?';
+          if (bLabel !== lastBank) {
+            mrows += '<tr><td class="bank-header" colspan="2">Bank ' + bLabel + '</td></tr>';
+            lastBank = bLabel;
+          }
+          const style = active ? ' style="color:var(--accent);font-weight:600"' : '';
+          mrows += '<tr><td class="key"' + style + '>' + (active ? '> ' : '  ') + sLabel + '</td><td class="val"' + style + '>' + escHtml(ch.name) + '</td></tr>';
+        });
+        mapTable.innerHTML = mrows;
+      }
+    }
+
+    function escHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    connect();
+  </script>
+</body>
+</html>

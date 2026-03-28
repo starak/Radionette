@@ -1,5 +1,6 @@
 import { ChildProcess, spawn, execFile } from "child_process";
 import { radioState } from "./state";
+import os from "os";
 import path from "path";
 
 const BT_ALIAS = "Radionette";
@@ -86,9 +87,19 @@ function run(cmd: string, args: string[], env?: Record<string, string>): Promise
   });
 }
 
+// Build PulseAudio paths dynamically based on the current OS user.
+// The app runs as root (for GPIO), but PulseAudio runs under the desktop
+// user. We detect uid and homedir from the SUDO_UID / SUDO_USER env vars
+// (set when running via sudo), falling back to the system user "pi" defaults.
+const pulseUid = process.env.SUDO_UID || String(os.userInfo().uid);
+const pulseHome =
+  process.env.SUDO_USER
+    ? `/home/${process.env.SUDO_USER}`
+    : os.userInfo().homedir;
+
 const PULSE_ENV = {
-  PULSE_SERVER: "unix:/run/user/1000/pulse/native",
-  PULSE_COOKIE: "/home/pi/.config/pulse/cookie",
+  PULSE_SERVER: `unix:/run/user/${pulseUid}/pulse/native`,
+  PULSE_COOKIE: `${pulseHome}/.config/pulse/cookie`,
 };
 
 /**

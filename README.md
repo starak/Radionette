@@ -7,6 +7,7 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 - **Radio mode:** A rotary dial switch selects from 15+ internet radio stations via GPIO. Audio plays through the Pi's 3.5mm jack or HDMI.
 - **Bluetooth mode:** The Pi becomes a discoverable Bluetooth speaker called "Radionette" (with a speaker icon on your phone). Pair and stream music from any device.
 - **Web status page:** A live dashboard at `http://radionette/` shows current station, now-playing metadata, and Bluetooth status.
+- **WiFi configuration:** If the Pi can't connect to a known WiFi network at boot, it creates a hotspot (`Radionette-Setup`). Connect to the hotspot and visit the built-in WiFi settings page to configure a network. WiFi settings are always accessible at `http://radionette/wifi`.
 
 ## Hardware
 
@@ -43,22 +44,7 @@ All input pins use internal pull-down resistors.
 3. Enable SSH
 4. Ensure the Pi is reachable as `ssh radionette` from your dev machine (via mDNS or SSH config)
 
-### 2. System Packages
-
-```bash
-sudo apt update
-sudo apt install -y \
-  mpg123 \
-  bluez \
-  rfkill \
-  pulseaudio \
-  pulseaudio-utils \
-  pulseaudio-module-bluetooth \
-  build-essential \
-  python3
-```
-
-### 3. Node.js
+### 2. Node.js
 
 Install Node.js v24 via [nvm](https://github.com/nvm-sh/nvm):
 
@@ -68,21 +54,17 @@ source ~/.bashrc
 nvm install v24.14.1
 ```
 
-### 4. Bluetooth Device Class
+### 3. Automated Setup
 
-To show a **speaker icon** when phones discover "Radionette", edit `/etc/bluetooth/main.conf`:
+The `setup-pi.sh` script handles everything else: system packages, Bluetooth configuration, pm2 installation, and boot persistence. Run it from your dev machine:
 
-```ini
-[General]
-Class = 0x240414
-```
-
-Then restart Bluetooth:
 ```bash
-sudo systemctl restart bluetooth
+ssh radionette 'bash -s' < setup-pi.sh
 ```
 
-### 5. First Deploy
+This installs `mpg123`, `bluez`, `rfkill`, `pulseaudio` (+ Bluetooth module), `build-essential`, and `python3`. It configures the Bluetooth device class for the speaker icon, installs pm2, sets up auto-start on boot, and installs the wifi-fallback systemd service.
+
+### 4. First Deploy
 
 From your dev machine (requires Node.js and npm locally):
 
@@ -93,41 +75,52 @@ npm install
 npm run deploy
 ```
 
-This builds the TypeScript, syncs everything to the Pi, installs production dependencies, and restarts the app.
+This builds the TypeScript, syncs everything to the Pi, installs production dependencies, and restarts the app. The deploy script auto-detects the remote Node.js path.
 
-### 6. pm2 (Process Manager)
-
-pm2 keeps the app running and restarts it on crash or reboot.
+Then on the Pi, start the app for the first time:
 
 ```bash
-# Install pm2 on the Pi
-sudo env PATH=/home/pi/.nvm/versions/node/v24.14.1/bin:$PATH npm install -g pm2
-
-# Start the app
-sudo env PATH=/home/pi/.nvm/versions/node/v24.14.1/bin:$PATH \
-  pm2 start ~/code/dist/index.js --name radionette --cwd ~/code
-
-# Enable auto-start on boot
-sudo env PATH=/home/pi/.nvm/versions/node/v24.14.1/bin:$PATH \
-  pm2 startup systemd -u root --hp /root
-
-# Save the process list
-sudo env PATH=/home/pi/.nvm/versions/node/v24.14.1/bin:$PATH \
-  pm2 save
+pm2 start ~/code/dist/index.js --name radionette --cwd ~/code
+pm2 save
 ```
 
-**Tip:** Add this alias to `~/.bashrc` on the Pi:
-```bash
-alias pm2='sudo env PATH=/home/pi/.nvm/versions/node/v24.14.1/bin:$PATH pm2'
-```
+(The `pm2` alias was added to `~/.bashrc` by the setup script — it handles sudo and PATH automatically.)
 
-Then you can just use `pm2 status`, `pm2 logs radionette`, etc.
-
-### 7. Verify
+### 5. Verify
 
 - Open `http://radionette/` in a browser — you should see the status page
 - Turn the dial — the station should change and audio should play
 - Switch to Bluetooth mode — "Radionette" should appear as a speaker on your phone
+
+## WiFi Configuration
+
+The Radionette includes a built-in WiFi configuration system so you can set up the Pi's network connection without a keyboard or monitor.
+
+### How It Works
+
+1. **On boot**, the `wifi-fallback` systemd service waits 30 seconds for the Pi to connect to a known WiFi network.
+2. **If no connection is established**, the Pi starts a WiFi hotspot:
+   - **SSID:** `Radionette-Setup`
+   - **Password:** `radionette`
+3. **Connect** your phone or laptop to the hotspot, then open `http://10.42.0.1/wifi` in a browser.
+4. **Select a network** from the scan list, enter the password, and tap Connect.
+5. **The Pi connects** to the new network and the hotspot shuts down automatically. Reconnect your device to the same network and visit `http://radionette/` to verify.
+
+### WiFi Settings Page
+
+The WiFi settings page is always available at `http://radionette/wifi`, not just in hotspot mode. Use it to:
+- View the current WiFi connection status
+- Scan for available networks
+- Connect to a different network
+
+### API Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/wifi` | WiFi settings page |
+| GET | `/api/wifi/status` | Current WiFi status (JSON) |
+| GET | `/api/wifi/scan` | Scan for available networks (JSON) |
+| POST | `/api/wifi/connect` | Connect to a network (`{ "ssid": "...", "password": "..." }`) |
 
 ## Development
 
@@ -144,10 +137,9 @@ When running on a machine without GPIO (e.g. your laptop), the app falls back to
 
 Some files contain settings specific to this setup that you'll want to adapt:
 
-- **`deploy.sh`** — The `REMOTE` variable is set to `radionette` (SSH hostname). Change this to match your Pi's hostname or IP.
+- **`deploy.sh`** — The `REMOTE` variable is set to `radionette` (SSH hostname). Change this to match your Pi's hostname or IP. The Node.js path is detected automatically.
 - **`channels.json`** — Pre-configured with Norwegian radio stations (NRK, P4, etc.). Replace with your own station URLs.
-- **`src/bluetooth.ts`** — PulseAudio socket path assumes user `pi` (uid 1000). If your Pi uses a different username, update the `PULSE_ENV` paths.
-- **pm2 commands in `deploy.sh`** — Reference the nvm Node.js path at `/home/pi/.nvm/versions/node/v24.14.1/bin`. Adjust if your Node version or username differs.
+- **`src/bluetooth.ts`** — PulseAudio paths are detected at runtime based on the OS user (via `SUDO_UID`/`SUDO_USER` env vars). No manual changes needed.
 
 ## Configuring Stations
 
@@ -175,15 +167,19 @@ radionette/
     channels.ts       # Channel lookup from channels.json
     player.ts         # mpg123 child process management
     bluetooth.ts      # Bluetooth A2DP sink management
+    wifi.ts           # WiFi scanning, connecting, hotspot (nmcli)
     web.ts            # HTTP + WebSocket server
     public/
       index.html      # Status page (single-file, inline CSS/JS)
+      wifi.html       # WiFi settings page (single-file, inline CSS/JS)
     gpio-logger.ts    # Utility for mapping dial positions
   assets/
     bt-connect.wav    # Sound: device connected
     bt-ready.wav      # Sound: BT mode active / device disconnected
   channels.json       # Station configuration
   deploy.sh           # Build + deploy script
+  setup-pi.sh         # One-time Pi setup script
+  wifi-fallback.sh    # Boot script: start hotspot if no WiFi
   package.json
   tsconfig.json
 ```

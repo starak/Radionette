@@ -44,10 +44,13 @@ Power ON + Bluetooth OFF
 | `src/channels.ts` | Loads `channels.json` at startup. Looks up channel number -> name + URL. |
 | `src/player.ts` | Spawns/kills `/usr/bin/mpg123` child processes. Parses ICY stream metadata. Reacts to state events. |
 | `src/bluetooth.ts` | Full Bluetooth A2DP sink management — enable/disable adapter, pairing agent, device monitoring, volume boost, flap detection, auto-reconnect, notification sounds. |
-| `src/web.ts` | HTTP server (port 80) + WebSocket. Serves status page, pushes live state to all connected clients. |
-| `src/public/index.html` | Single-file status page with inline CSS/JS. Dark theme, live WebSocket updates. Shows BT device name when connected. |
+| `src/web.ts` | HTTP server (port 80) + WebSocket. Serves status page, WiFi settings page, and WiFi API endpoints. Pushes live state to all connected clients. |
+| `src/wifi.ts` | WiFi management via `nmcli` — scan for networks, connect, start/stop hotspot. Falls back to mock data in dev mode. |
+| `src/public/index.html` | Single-file status page with inline CSS/JS. Dark theme, live WebSocket updates. Shows BT device name when connected. Link to WiFi settings. |
+| `src/public/wifi.html` | Single-file WiFi settings page with inline CSS/JS. Dark theme, network scan list with signal bars, connect modal with password field, AP-mode warning. |
 | `src/gpio-logger.ts` | Standalone utility — logs raw GPIO values on change for mapping physical dial positions. |
 | `channels.json` | Channel configuration — maps dial position numbers to station name + stream URL. Edit this to change stations. |
+| `wifi-fallback.sh` | Boot script — waits 30s for WiFi, starts hotspot if no connection. Installed as a systemd service by `setup-pi.sh`. |
 | `assets/bt-connect.wav` | Ascending two-tone chime played when a Bluetooth device connects. |
 | `assets/bt-ready.wav` | Soft single tone played when BT mode activates or a device disconnects. |
 
@@ -93,9 +96,36 @@ The Bluetooth module (`src/bluetooth.ts`) manages:
 
 All system binaries use absolute paths (`/usr/sbin/rfkill`, `/usr/bin/bluetoothctl`, `/usr/bin/pactl`, `/usr/bin/paplay`) because pm2 runs with a minimal PATH.
 
-PulseAudio runs as user `pi` (uid 1000) but the app runs as root. All `pactl`/`paplay` commands use:
-- `PULSE_SERVER=unix:/run/user/1000/pulse/native`
-- `PULSE_COOKIE=/home/pi/.config/pulse/cookie`
+PulseAudio runs as the desktop user but the app runs as root. PulseAudio paths are detected at runtime using `SUDO_UID`/`SUDO_USER` environment variables (set automatically by `sudo`), falling back to `os.userInfo()`. No hardcoded user paths.
+
+### WiFi Details
+
+The WiFi module (`src/wifi.ts`) provides:
+
+- **Network scanning:** `nmcli device wifi list` with deduplication and signal sorting
+- **Connecting:** `nmcli device wifi connect` — stops hotspot first if active, restarts it if connection fails
+- **Hotspot:** `nmcli device wifi hotspot` — SSID `Radionette-Setup`, password `radionette`, connection name `radionette-hotspot`
+- **Status:** Reads wlan0 device state via `nmcli device show`
+- **Dev mode:** If `nmcli` is unavailable (laptop), returns mock data
+
+Uses absolute path `/usr/bin/nmcli`. The hotspot connection profile (`radionette-hotspot`) is deleted on stop to avoid accumulating stale profiles.
+
+**WiFi fallback boot service:**
+- `wifi-fallback.sh` runs at boot via `wifi-fallback.service` (systemd, oneshot)
+- Waits up to 30 seconds (checking every 5s) for wlan0 to connect
+- If no connection, starts the hotspot via nmcli
+- Logs to systemd journal (`logger -t wifi-fallback`)
+
+**API endpoints** (served by `src/web.ts`):
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/wifi` | WiFi settings HTML page |
+| GET | `/api/wifi/status` | JSON: `{ connected, ssid, ip, hotspotActive }` |
+| GET | `/api/wifi/scan` | JSON: `[{ ssid, signal, security, active }]` |
+| POST | `/api/wifi/connect` | JSON body: `{ ssid, password }` → `{ success, error? }` |
+
+**Pi 3 compatibility:** The BCM43438 WiFi chip on the Pi 3 Model B supports AP mode. Both Pi 3 and Pi 4 support simultaneous AP + managed on the same channel, but the implementation uses a simpler approach: stop AP → connect → restart AP if connection fails.
 
 ## Development
 
@@ -121,31 +151,36 @@ The deploy script (`deploy.sh`) does:
 3. rsync `channels.json`, `package.json`, `package-lock.json` to Pi
 4. rsync `src/public/` to `dist/public/` on Pi (HTML not handled by tsc)
 5. rsync `assets/` to Pi (sound files)
-6. `npm install --omit=dev` on Pi (compiles native `rpio` addon)
-7. `pm2 restart radionette`
+6. rsync `wifi-fallback.sh` to Pi (+ chmod +x)
+7. `npm install --omit=dev` on Pi (compiles native `rpio` addon)
+8. `pm2 restart radionette`
 
 ## Raspberry Pi Setup
 
 ### Prerequisites
 
-- Raspberry Pi 3 Model B (or compatible) with Raspberry Pi OS
+- Raspberry Pi (3 Model B, 4, or compatible) with Raspberry Pi OS (desktop variant, for PulseAudio)
 - Hostname set to `radionette`
 - SSH enabled, accessible as `ssh radionette` from dev machine
+- Node.js v24.14.1 installed via nvm
 
-### 1. System Packages
+### Automated Setup
+
+Run `setup-pi.sh` from the dev machine to install all system packages, configure Bluetooth, install pm2, and set up boot persistence:
 
 ```bash
-sudo apt update
-sudo apt install -y \
-  mpg123 \
-  bluez \
-  rfkill \
-  pulseaudio \
-  pulseaudio-utils \
-  pulseaudio-module-bluetooth \
-  build-essential \
-  python3
+ssh radionette 'bash -s' < setup-pi.sh
 ```
+
+The script auto-detects the username and Node.js path — works with any user, not just `pi`.
+
+### What setup-pi.sh does
+
+1. **System packages:** `mpg123`, `bluez`, `rfkill`, `pulseaudio` (+ bluetooth module), `build-essential`, `python3`
+2. **Bluetooth device class:** Sets `Class = 0x240414` in `/etc/bluetooth/main.conf` (speaker icon)
+3. **pm2:** Installs globally, configures systemd startup service
+4. **Convenience:** Adds a `pm2` alias to `~/.bashrc` (handles sudo + PATH automatically)
+5. **WiFi fallback:** Installs `wifi-fallback.service` systemd unit pointing to `~/code/wifi-fallback.sh`, enables it for boot
 
 | Package | Purpose |
 |---|---|
@@ -157,85 +192,41 @@ sudo apt install -y \
 | `pulseaudio-module-bluetooth` | A2DP sink support for PulseAudio |
 | `build-essential`, `python3` | Required to compile `rpio` native addon |
 
-### 2. Node.js (via nvm)
+### pm2 Process Manager
+
+After setup and first deploy, start the app:
 
 ```bash
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-source ~/.bashrc
-nvm install v24.14.1
+pm2 start ~/code/dist/index.js --name radionette --cwd ~/code
+pm2 save
 ```
 
-Node path: `~/.nvm/versions/node/v24.14.1/bin/node`
+(The `pm2` alias handles sudo and PATH automatically.)
 
-### 3. Bluetooth Configuration
+pm2 creates a systemd service (`pm2-root`) that auto-starts on boot and resurrects the saved process list.
 
-Edit `/etc/bluetooth/main.conf` and set the device class to Loudspeaker (shows speaker icon on phones):
-
-```ini
-[General]
-Class = 0x240414
-```
-
-Then restart:
-```bash
-sudo systemctl restart bluetooth
-```
-
-### 4. pm2 Process Manager
-
-Install pm2 globally (need PATH workaround for sudo):
+### Useful pm2 Commands
 
 ```bash
-sudo env PATH=/home/pi/.nvm/versions/node/v24.14.1/bin:$PATH npm install -g pm2
+pm2 status                # Check app status
+pm2 logs radionette       # Tail logs
+pm2 restart radionette    # Restart after deploy
+pm2 save                  # Save process list (after changes)
 ```
 
-First-time app start:
-```bash
-sudo env PATH=/home/pi/.nvm/versions/node/v24.14.1/bin:$PATH \
-  pm2 start ~/code/dist/index.js --name radionette --cwd ~/code
-```
+### PulseAudio
 
-Set up boot persistence:
-```bash
-sudo env PATH=/home/pi/.nvm/versions/node/v24.14.1/bin:$PATH \
-  pm2 startup systemd -u root --hp /root
+PulseAudio should run as the desktop user on login (default on Raspberry Pi OS with desktop). The app communicates with it using explicit socket/cookie paths detected at runtime. No extra PulseAudio configuration needed beyond installing `pulseaudio-module-bluetooth`.
 
-sudo env PATH=/home/pi/.nvm/versions/node/v24.14.1/bin:$PATH \
-  pm2 save
-```
-
-This creates a systemd service (`pm2-root`) that auto-starts pm2 on boot and resurrects the saved process list.
-
-### 5. Useful pm2 Commands
-
-All pm2 commands need the PATH prefix when run via sudo:
-
-```bash
-PM2="sudo env PATH=/home/pi/.nvm/versions/node/v24.14.1/bin:\$PATH pm2"
-
-$PM2 status                # Check app status
-$PM2 logs radionette       # Tail logs
-$PM2 restart radionette    # Restart after deploy
-$PM2 save                  # Save process list (after changes)
-```
-
-Or add an alias to `~/.bashrc`:
-```bash
-alias pm2='sudo env PATH=/home/pi/.nvm/versions/node/v24.14.1/bin:$PATH pm2'
-```
-
-### 6. PulseAudio
-
-PulseAudio should run as user `pi` on login (default on Raspberry Pi OS with desktop). The app communicates with it using explicit socket/cookie paths. No extra PulseAudio configuration needed beyond installing `pulseaudio-module-bluetooth`.
-
-### 7. Directory Structure on Pi
+### Directory Structure on Pi
 
 ```
-/home/pi/code/
+~/code/
   dist/           # Compiled JS (deployed from dev machine)
-    public/       # index.html
+    public/       # index.html, wifi.html
   assets/         # Sound files (bt-connect.wav, bt-ready.wav)
   channels.json   # Channel configuration
+  wifi-fallback.sh # Boot fallback AP script
   package.json
   node_modules/   # Production dependencies (installed on Pi)
 ```

@@ -4,6 +4,15 @@ set -e
 REMOTE="radionette"
 REMOTE_DIR="~/code"
 
+# Detect the remote user's nvm Node.js path dynamically.
+# nvm is only loaded in interactive shells, so source it explicitly.
+NODE_BIN=$(ssh "${REMOTE}" 'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; echo $(dirname $(which node))')
+if [ -z "${NODE_BIN}" ]; then
+  echo "Error: Could not detect Node.js path on ${REMOTE}. Is Node.js installed?"
+  exit 1
+fi
+echo "Detected Node.js on ${REMOTE}: ${NODE_BIN}"
+
 echo "Building TypeScript..."
 npm run build
 
@@ -28,11 +37,17 @@ rsync -avz \
   assets/ \
   "${REMOTE}:${REMOTE_DIR}/assets/"
 
+# Copy wifi-fallback script
+rsync -avz \
+  wifi-fallback.sh \
+  "${REMOTE}:${REMOTE_DIR}/wifi-fallback.sh"
+ssh "${REMOTE}" "chmod +x ${REMOTE_DIR}/wifi-fallback.sh"
+
 echo "Installing dependencies on Pi..."
-ssh "${REMOTE}" "cd ${REMOTE_DIR} && PATH=~/.nvm/versions/node/v24.14.1/bin:\$PATH npm install --omit=dev"
+ssh "${REMOTE}" "export NVM_DIR=\$HOME/.nvm; [ -s \$NVM_DIR/nvm.sh ] && . \$NVM_DIR/nvm.sh; cd ${REMOTE_DIR} && npm install --omit=dev"
 
 echo "Restarting app via pm2..."
-ssh "${REMOTE}" "sudo env PATH=/home/pi/.nvm/versions/node/v24.14.1/bin:\$PATH pm2 restart radionette"
+ssh "${REMOTE}" "sudo env PATH=${NODE_BIN}:\$PATH pm2 restart radionette 2>/dev/null || sudo env PATH=${NODE_BIN}:\$PATH pm2 start ${REMOTE_DIR}/dist/index.js --name radionette --cwd ${REMOTE_DIR}"
 
 echo ""
 echo "Deploy complete. App restarted."

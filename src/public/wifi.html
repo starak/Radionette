@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Radionette — WiFi Settings</title>
+  <style>
+    :root {
+      --bg:         #1a1a1a;
+      --bg-card:    #252525;
+      --bg-hover:   #2e2e2e;
+      --border:     #333;
+      --text:       #ddd;
+      --text-sec:   #999;
+      --text-muted: #777;
+      --text-dim:   #666;
+      --dot-off:    #4a4a4a;
+      --accent:     #7daf8b;
+      --accent-bg:  #2a3a2e;
+      --blue:       #6b8db5;
+      --red:        #c0392b;
+      --red-bg:     #3a2a2a;
+      --amber:      #c9a84c;
+      --amber-bg:   #332e1a;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      margin-bottom: 0.3rem;
+      letter-spacing: 0.1em;
+      color: #fff;
+    }
+
+    h1 a { color: inherit; text-decoration: none; }
+
+    .tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tab {
+      padding: 0.5rem 1.2rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .card {
+      background: var(--bg-card);
+      border-radius: 12px;
+      padding: 1.5rem 2rem;
+      width: 100%;
+      max-width: 480px;
+      margin-bottom: 1rem;
+      border: 1px solid var(--border);
+    }
+
+    .card h2 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 0.8rem;
+    }
+
+    /* Status indicators */
+    .indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+
+    .dot.connected { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+    .dot.hotspot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+    .dot.disconnected { background: var(--dot-off); }
+
+    .status-text {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .status-detail {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-left: 1.6rem;
+    }
+
+    /* Network list */
+    .network-list {
+      list-style: none;
+    }
+
+    .network-list li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.6rem 0.5rem;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      border-radius: 6px;
+      transition: background 0.15s;
+    }
+
+    .network-list li:last-child { border-bottom: none; }
+    .network-list li:hover { background: var(--bg-hover); }
+    .network-list li.active-net { background: var(--accent-bg); }
+
+    .net-info {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .net-ssid {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .net-ssid.active-label { color: var(--accent); }
+
+    .net-detail {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .signal-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
+    .signal-bars .bar {
+      width: 4px;
+      border-radius: 1px;
+      background: var(--border);
+    }
+
+    .signal-bars .bar.filled { background: var(--accent); }
+    .signal-bars .bar:nth-child(1) { height: 4px; }
+    .signal-bars .bar:nth-child(2) { height: 8px; }
+    .signal-bars .bar:nth-child(3) { height: 12px; }
+    .signal-bars .bar:nth-child(4) { height: 18px; }
+
+    .scan-btn {
+      display: block;
+      width: 100%;
+      margin-top: 0.8rem;
+      padding: 0.6rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-sec);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .scan-btn:hover { background: var(--bg-hover); color: var(--text); }
+    .scan-btn:disabled { opacity: 0.5; cursor: default; }
+
+    .empty-msg {
+      text-align: center;
+      color: var(--text-dim);
+      padding: 1rem 0;
+      font-size: 0.9rem;
+    }
+
+    /* Modal overlay */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.visible { display: flex; }
+
+    .modal {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem 2rem;
+      width: 90%;
+      max-width: 400px;
+    }
+
+    .modal h3 {
+      font-size: 1.1rem;
+      margin-bottom: 0.3rem;
+      color: var(--text);
+    }
+
+    .modal .modal-sub {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+
+    .modal input[type="password"],
+    .modal input[type="text"] {
+      width: 100%;
+      padding: 0.6rem 0.8rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      margin-bottom: 0.5rem;
+    }
+
+    .modal input:focus { border-color: var(--accent); }
+
+    .show-pw-row {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin-bottom: 1rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .ap-warning {
+      background: var(--amber-bg);
+      border: 1px solid var(--amber);
+      border-radius: 6px;
+      padding: 0.6rem 0.8rem;
+      font-size: 0.8rem;
+      color: var(--amber);
+      margin-bottom: 1rem;
+      line-height: 1.4;
+    }
+
+    .modal-buttons {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: flex-end;
+    }
+
+    .modal-buttons button {
+      padding: 0.5rem 1.2rem;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    .modal-buttons button:disabled { opacity: 0.5; cursor: default; }
+
+    .btn-cancel {
+      background: var(--border);
+      color: var(--text-sec);
+    }
+
+    .btn-connect {
+      background: var(--accent);
+      color: var(--bg);
+      font-weight: 600;
+    }
+
+    /* Feedback toast */
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 0.6rem 1.2rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      z-index: 200;
+      transition: opacity 0.3s;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .toast.visible { opacity: 1; }
+    .toast.success { background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent); }
+    .toast.error { background: var(--red-bg); color: var(--red); border: 1px solid var(--red); }
+  </style>
+</head>
+<body>
+  <h1><a href="/">RADIONETTE</a></h1>
+  <nav class="tabs">
+    <a href="/" class="tab">Status</a>
+    <a href="/wifi" class="tab active">WiFi</a>
+    <a href="/debug" class="tab">Debug</a>
+  </nav>
+
+  <!-- Connection status -->
+  <div class="card" id="status-card">
+    <h2>Connection Status</h2>
+    <div class="indicator">
+      <div id="wifi-dot" class="dot disconnected"></div>
+      <span class="status-text" id="wifi-status">Checking...</span>
+    </div>
+    <div class="status-detail" id="wifi-detail"></div>
+  </div>
+
+  <!-- Available networks -->
+  <div class="card">
+    <h2>Available Networks</h2>
+    <ul class="network-list" id="network-list">
+      <li class="empty-msg">Scanning...</li>
+    </ul>
+    <button class="scan-btn" id="scan-btn" onclick="doScan()">Scan again</button>
+  </div>
+
+  <!-- Connect modal -->
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <h3 id="modal-ssid">Connect to Network</h3>
+      <div class="modal-sub" id="modal-security"></div>
+      <div class="ap-warning" id="ap-warning" style="display:none;">
+        You are connected via the Radionette hotspot. After connecting
+        to this network, you will lose this connection. Reconnect your
+        device to the new network, then visit http://radionette/ to
+        continue.
+      </div>
+      <input type="password" id="pw-input" placeholder="Password" autocomplete="off">
+      <div class="show-pw-row">
+        <input type="checkbox" id="show-pw" onchange="togglePw()">
+        <label for="show-pw">Show password</label>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+        <button class="btn-connect" id="connect-btn" onclick="doConnect()">Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    let currentStatus = null;
+    let selectedSsid = '';
+    let selectedSecurity = '';
+
+    // --- Status ---
+    async function fetchStatus() {
+      try {
+        const r = await fetch('/api/wifi/status');
+        currentStatus = await r.json();
+        renderStatus();
+      } catch (e) {
+        $('wifi-dot').className = 'dot disconnected';
+        $('wifi-status').textContent = 'Unable to reach Radionette';
+        $('wifi-detail').textContent = '';
+      }
+    }
+
+    function renderStatus() {
+      const s = currentStatus;
+      if (!s) return;
+
+      if (s.hotspotActive) {
+        $('wifi-dot').className = 'dot hotspot';
+        $('wifi-status').textContent = 'Hotspot Active';
+        $('wifi-detail').textContent = 'SSID: ' + (s.ssid || 'Radionette-Setup') + (s.ip ? ' \u2022 IP: ' + s.ip : '');
+      } else if (s.connected && s.ssid) {
+        $('wifi-dot').className = 'dot connected';
+        $('wifi-status').textContent = 'Connected to ' + s.ssid;
+        $('wifi-detail').textContent = s.ip ? 'IP: ' + s.ip : '';
+      } else {
+        $('wifi-dot').className = 'dot disconnected';
+        $('wifi-status').textContent = 'Not connected';
+        $('wifi-detail').textContent = '';
+      }
+    }
+
+    // --- Scan ---
+    async function doScan() {
+      const btn = $('scan-btn');
+      btn.disabled = true;
+      btn.textContent = 'Scanning...';
+      $('network-list').innerHTML = '<li class="empty-msg">Scanning...</li>';
+
+      try {
+        const r = await fetch('/api/wifi/scan');
+        const networks = await r.json();
+        renderNetworks(networks);
+      } catch (e) {
+        $('network-list').innerHTML = '<li class="empty-msg">Scan failed</li>';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Scan again';
+      }
+    }
+
+    function signalBars(signal) {
+      const level = signal > 75 ? 4 : signal > 50 ? 3 : signal > 25 ? 2 : 1;
+      let html = '<div class="signal-bars">';
+      for (let i = 1; i <= 4; i++) {
+        html += '<div class="bar' + (i <= level ? ' filled' : '') + '"></div>';
+      }
+      return html + '</div>';
+    }
+
+    function renderNetworks(networks) {
+      const list = $('network-list');
+      if (!networks || networks.length === 0) {
+        list.innerHTML = '<li class="empty-msg">No networks found</li>';
+        return;
+      }
+
+      list.innerHTML = '';
+      networks.forEach(n => {
+        const li = document.createElement('li');
+        if (n.active) li.className = 'active-net';
+        li.onclick = () => openModal(n.ssid, n.security);
+
+        const secText = n.security === 'Open' ? 'Open' : n.security;
+        li.innerHTML =
+          '<div class="net-info">' +
+            '<span class="net-ssid' + (n.active ? ' active-label' : '') + '">' + escHtml(n.ssid) + '</span>' +
+            '<span class="net-detail">' + secText + (n.active ? ' \u2022 Connected' : '') + '</span>' +
+          '</div>' +
+          signalBars(n.signal);
+
+        list.appendChild(li);
+      });
+    }
+
+    function escHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    // --- Connect modal ---
+    function openModal(ssid, security) {
+      selectedSsid = ssid;
+      selectedSecurity = security;
+      $('modal-ssid').textContent = 'Connect to ' + ssid;
+      $('modal-security').textContent = security === 'Open' ? 'Open network (no password required)' : security;
+      $('pw-input').value = '';
+      $('pw-input').style.display = security === 'Open' ? 'none' : '';
+      $('show-pw').parentElement.style.display = security === 'Open' ? 'none' : '';
+
+      // Show AP warning if we're on the hotspot
+      $('ap-warning').style.display = (currentStatus && currentStatus.hotspotActive) ? '' : 'none';
+
+      $('connect-btn').disabled = false;
+      $('connect-btn').textContent = 'Connect';
+      $('modal').classList.add('visible');
+      if (security !== 'Open') $('pw-input').focus();
+    }
+
+    function closeModal() {
+      $('modal').classList.remove('visible');
+    }
+
+    function togglePw() {
+      $('pw-input').type = $('show-pw').checked ? 'text' : 'password';
+    }
+
+    async function doConnect() {
+      const btn = $('connect-btn');
+      btn.disabled = true;
+      btn.textContent = 'Connecting...';
+
+      const wasHotspot = currentStatus && currentStatus.hotspotActive;
+
+      try {
+        const r = await fetch('/api/wifi/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ssid: selectedSsid,
+            password: $('pw-input').value,
+          }),
+        });
+        const result = await r.json();
+
+        if (result.success) {
+          closeModal();
+          showToast('Connected to ' + selectedSsid, 'success');
+          // If we were on the hotspot, the connection will drop.
+          // Refresh status after a short delay.
+          if (wasHotspot) {
+            showToast('Switching networks \u2014 reconnect your device to ' + selectedSsid, 'success', 10000);
+          } else {
+            setTimeout(fetchStatus, 2000);
+            setTimeout(doScan, 3000);
+          }
+        } else {
+          btn.disabled = false;
+          btn.textContent = 'Connect';
+          showToast(result.error || 'Connection failed', 'error');
+        }
+      } catch (e) {
+        // If connection to Radionette dropped, that probably means success
+        // (hotspot went down, Pi connected to new network)
+        if (wasHotspot) {
+          closeModal();
+          showToast('Switching networks \u2014 reconnect your device to ' + selectedSsid, 'success', 10000);
+        } else {
+          btn.disabled = false;
+          btn.textContent = 'Connect';
+          showToast('Request failed \u2014 check connection', 'error');
+        }
+      }
+    }
+
+    // Enter key to connect
+    $('pw-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') doConnect();
+    });
+
+    // Close modal on overlay click
+    $('modal').addEventListener('click', e => {
+      if (e.target === $('modal')) closeModal();
+    });
+
+    // --- Toast ---
+    let toastTimer;
+    function showToast(msg, type, duration) {
+      const t = $('toast');
+      t.textContent = msg;
+      t.className = 'toast visible ' + type;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { t.className = 'toast'; }, duration || 4000);
+    }
+
+    // --- Init ---
+    fetchStatus();
+    doScan();
+    // Auto-refresh status every 15 seconds
+    setInterval(fetchStatus, 15000);
+  </script>
+</body>
+</html>
