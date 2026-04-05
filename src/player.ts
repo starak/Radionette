@@ -12,7 +12,39 @@ let pendingOperation: Promise<void> = Promise.resolve();
 let desiredChannel: ChannelInfo | null = null;
 let lastMetadata: string | null = null;
 
+// Retry state for failed stream connections
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryCount = 0;
+const RETRY_DELAYS = [5000, 10000, 30000]; // escalating backoff, caps at 30s
+
+function cancelRetry(): void {
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+}
+
+function scheduleRetry(): void {
+  // Only retry if we still have a desired channel and no player is running
+  if (!desiredChannel || playerProcess) return;
+
+  const delay = RETRY_DELAYS[Math.min(retryCount, RETRY_DELAYS.length - 1)];
+  retryCount++;
+  console.log(
+    `[Player] Scheduling retry #${retryCount} in ${delay / 1000}s for: ${desiredChannel.name}`
+  );
+
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    if (desiredChannel && !playerProcess) {
+      console.log(`[Player] Retrying playback: ${desiredChannel.name}`);
+      spawnPlayer(desiredChannel);
+    }
+  }, delay);
+}
+
 function killPlayer(): void {
+  cancelRetry();
   if (!playerProcess) return;
 
   const proc = playerProcess;
@@ -57,6 +89,10 @@ function spawnPlayer(channel: ChannelInfo): void {
       playerProcess = null;
       currentUrl = null;
       radioState.setPlaying(false);
+      // Retry if we still want this channel
+      if (desiredChannel) {
+        scheduleRetry();
+      }
     }
   });
 
@@ -68,6 +104,10 @@ function spawnPlayer(channel: ChannelInfo): void {
       playerProcess = null;
       currentUrl = null;
       radioState.setPlaying(false);
+      // Retry if we still want this channel (unexpected exit, not user-initiated stop)
+      if (desiredChannel) {
+        scheduleRetry();
+      }
     }
   });
 
@@ -76,6 +116,8 @@ function spawnPlayer(channel: ChannelInfo): void {
 
 function schedulePlay(channel: ChannelInfo): void {
   desiredChannel = channel;
+  retryCount = 0;
+  cancelRetry();
 
   pendingOperation = pendingOperation.then(() => {
     // Only play if this is still the desired channel
@@ -92,6 +134,7 @@ function schedulePlay(channel: ChannelInfo): void {
 
 function scheduleStop(): void {
   desiredChannel = null;
+  cancelRetry();
 
   pendingOperation = pendingOperation.then(() => {
     killPlayer();

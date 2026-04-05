@@ -133,6 +133,18 @@ class RadioStateEmitter extends EventEmitter {
     this.emitStateChange();
   }
 
+  /**
+   * Re-emit channel:change for the current channel if we're in radio mode
+   * with a channel selected but not playing. Used to retry playback after
+   * network becomes available (e.g. hotspot -> WiFi transition).
+   */
+  retryPlayback(): void {
+    if (this._state.mode === "radio" && this._state.channel && !this._state.playing) {
+      console.log(`[State] Retrying playback: ${this._state.channel.name}`);
+      this.emit("channel:change", this._state.channel);
+    }
+  }
+
   private emitStateChange(): void {
     this.emit("state:change", this.state);
   }

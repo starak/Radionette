@@ -1,4 +1,5 @@
 import { execFile } from "child_process";
+import { radioState } from "./state";
 
 // Absolute paths — pm2 runs with minimal PATH
 const NMCLI = "/usr/bin/nmcli";
@@ -217,6 +218,9 @@ export async function connectToNetwork(
     }
 
     console.log(`[WiFi] Connected to "${ssid}"`);
+    // Network is now available — retry playback if a channel was selected
+    // but couldn't play (e.g. hotspot mode had no internet)
+    radioState.retryPlayback();
     return { success: true };
   } catch (err: any) {
     console.error(`[WiFi] Failed to connect to "${ssid}":`, err.message);
