@@ -1,6 +1,8 @@
 {
-  "_comment": "Channel map: key is the decimal value of GPIO bits 0-7 (channel selector).",
+  "_comment": "Channel map: key is the decimal value of GPIO bits 0-7 (channel selector). 0 is the debug channel :)",
   "channels": {
+    "0": { "name": "Radio Rock", "url": "https://live-bauerno.sharp-stream.com/simulcast3_no.mp3" },
+
     "192": { "name": "NRK P1", "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p1_dk8" },
     "193": { "name": "NRK P1+", "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p1pluss" },
     "200": { "name": "NRK P2", "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p2" },

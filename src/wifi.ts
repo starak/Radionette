@@ -288,15 +288,23 @@ export async function stopHotspot(): Promise<void> {
 
 /**
  * Check if the hotspot is currently active.
+ * Uses `nmcli device status` which reliably shows the connection name
+ * associated with wlan0 regardless of whether any client is connected.
  */
 export async function isHotspotActive(): Promise<boolean> {
   if (devMode) return false;
 
   try {
-    const output = await nmcli("-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active");
+    // nmcli -t device status outputs lines like:
+    // wlan0:wifi:connected:radionette-hotspot
+    // wlan0:wifi:connected:MyNetwork
+    // wlan0:wifi:disconnected:--
+    const output = await nmcli("-t", "device", "status");
     const lines = output.split("\n");
     for (const line of lines) {
-      if (line.includes(AP_CON_NAME)) {
+      const parts = line.split(":");
+      // parts: [DEVICE, TYPE, STATE, CONNECTION]
+      if (parts[0] === "wlan0" && parts[3] === AP_CON_NAME) {
         return true;
       }
     }
