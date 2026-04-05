@@ -31,6 +31,11 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let prevRawValue = -1;
 let stableRawValue = -1;
 
+// When a value is injected via the debug API, we need to suppress the
+// poll loop from immediately reverting to the physical pin reading.
+// We store the physical value to ignore until the dial actually moves.
+let ignorePhysicalValue: number | null = null;
+
 function readPins(): number {
   if (!rpio) return 0;
 
@@ -82,6 +87,19 @@ function updateOutputs(power: boolean, bluetooth: boolean): void {
 
 function poll(): void {
   const rawValue = readPins();
+
+  // If we injected a virtual value, ignore poll readings that match
+  // the old physical position. Only resume when the dial moves to
+  // something new (i.e. the user physically turned the dial).
+  if (ignorePhysicalValue !== null) {
+    if (rawValue === ignorePhysicalValue) {
+      // Dial hasn't moved — keep ignoring
+      return;
+    }
+    // Dial moved to a new position — clear the suppression
+    console.log(`[GPIO] Physical dial moved — resuming hardware control`);
+    ignorePhysicalValue = null;
+  }
 
   if (rawValue !== prevRawValue) {
     prevRawValue = rawValue;
@@ -135,13 +153,27 @@ export function startGpio(): void {
 
 /**
  * Inject a synthetic GPIO value — used by the debug API to simulate
- * dial changes from the web UI. Sets stableRawValue/prevRawValue so
- * the normal poll loop won't immediately undo it (the physical dial
- * will naturally override on its next different reading).
+ * dial changes from the web UI. Suppresses the poll loop from reverting
+ * to the current physical pin reading until the dial physically moves
+ * to a new position.
  */
 export function injectGpioValue(rawValue: number): void {
+  // Remember what the physical pins are currently reading so we can
+  // ignore that value in the poll loop until the dial moves
+  const physicalValue = readPins();
+  if (physicalValue !== rawValue) {
+    ignorePhysicalValue = physicalValue;
+  }
+
   stableRawValue = rawValue;
   prevRawValue = rawValue;
+
+  // Cancel any pending debounce that might fire with the old physical value
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+
   const binary = rawValue.toString(2).padStart(10, "0");
   const ch = lookupChannel(rawValue & 0xff);
   const chLabel = ch ? `${ch.number} – ${ch.name}` : "none";
