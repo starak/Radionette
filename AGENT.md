@@ -38,30 +38,33 @@ Power ON + Bluetooth OFF
 
 | File | Purpose |
 |---|---|
-| `src/index.ts` | Entry point — wires modules: channels -> player -> bluetooth -> web -> gpio |
+| `src/index.ts` | Entry point — wires modules: channels -> player -> bluetooth -> hotspot-alert -> web -> gpio |
 | `src/state.ts` | Central state singleton + EventEmitter. All modules communicate through this. |
 | `src/gpio.ts` | Reads 10 input pins every 10ms, debounces (50ms), drives state machine, controls LED outputs. Falls back to dev mode when rpio unavailable. |
 | `src/channels.ts` | Loads `channels.json` at startup. Looks up channel number -> name + URL. |
-| `src/player.ts` | Spawns/kills `/usr/bin/mpg123` child processes. Parses ICY stream metadata. Reacts to state events. |
+| `src/player.ts` | Spawns/kills `/usr/bin/mpg123` child processes. Parses ICY stream metadata. Reacts to state events. Auto-retries with escalating backoff (5s, 10s, 30s) when stream fails and desired channel is still set. |
 | `src/bluetooth.ts` | Full Bluetooth A2DP sink management — enable/disable adapter, pairing agent, device monitoring, volume boost, flap detection, auto-reconnect, notification sounds. |
-| `src/web.ts` | HTTP server (port 80) + WebSocket. Serves status page, WiFi settings page, and WiFi API endpoints. Pushes live state to all connected clients. |
-| `src/wifi.ts` | WiFi management via `nmcli` — scan for networks, connect, start/stop hotspot. Falls back to mock data in dev mode. |
+| `src/web.ts` | HTTP server (port 80) + WebSocket. Serves status page, WiFi settings page, and WiFi API endpoints. System management endpoints (WiFi reset, reboot). Pushes live state to all connected clients. |
+| `src/wifi.ts` | WiFi management via `nmcli` — scan for networks, connect (triggers playback retry on success), start/stop hotspot, hotspot detection, WiFi reset, system reboot. Falls back to mock data in dev mode. |
+| `src/hotspot-alert.ts` | Periodic bleep alert when hotspot is active in radio mode. Uses `aplay` (ALSA) for early-boot compatibility before PulseAudio starts. Polls hotspot status every 5s, loops `hotspot-bleep.wav` via aplay. |
 | `src/public/index.html` | Single-file status page with inline CSS/JS. Dark theme (neutral grey palette via CSS custom properties), live WebSocket updates, tab navigation (Status / WiFi / Debug). Channel list grouped by bank with bank headers. |
 | `src/public/wifi.html` | Single-file WiFi settings page with inline CSS/JS. Same dark theme, tab navigation. Network scan list with signal bars, connect modal with password field, AP-mode warning. |
-| `src/public/debug.html` | Single-file debug page with inline CSS/JS. Same dark theme, tab navigation. Color-coded GPIO bit display (green=power, blue=bluetooth, amber=bank/sub), decoded bank/sub values, full state dump table, grouped channel map. Live WebSocket updates. |
+| `src/public/debug.html` | Single-file debug page with inline CSS/JS. Same dark theme, tab navigation. Color-coded GPIO bit display (green=power, blue=bluetooth, amber=bank/sub), decoded bank/sub values, full state dump table, grouped channel map. System card with WiFi reset and reboot buttons. Live WebSocket updates. |
 | `src/gpio-logger.ts` | Standalone utility — logs raw GPIO values on change for mapping physical dial positions. |
 | `channels.json` | Channel configuration — maps dial position numbers to station name + stream URL. Edit this to change stations. |
 | `wifi-fallback.sh` | Boot script — waits 30s for WiFi, starts hotspot if no connection. Installed as a systemd service by `setup-pi.sh`. |
 | `assets/bt-connect.wav` | Ascending two-tone chime played when a Bluetooth device connects. |
 | `assets/bt-ready.wav` | Soft single tone played when BT mode activates or a device disconnects. |
+| `assets/hotspot-bleep.wav` | 880Hz tone followed by 3s silence. Loops via aplay when hotspot is active in radio mode. |
 
 ### Event Flow
 
 ```
 GPIO poll (10ms) -> debounce (50ms) -> state.ts EventEmitter
-  |- player.ts listens   -> spawns/kills mpg123
-  |- bluetooth.ts listens -> enables/disables BT adapter
-  +- web.ts listens       -> broadcasts to WebSocket clients
+  |- player.ts listens        -> spawns/kills mpg123 (with auto-retry on failure)
+  |- bluetooth.ts listens     -> enables/disables BT adapter
+  |- hotspot-alert.ts listens -> bleeps when hotspot active in radio mode
+  +- web.ts listens           -> broadcasts to WebSocket clients
 ```
 
 Events emitted by state.ts:
@@ -93,6 +96,20 @@ Example: Channel key `192` = 0b**1100**_0000 = Bank 1 (`12`), Sub 1 (`0`) = NRK 
 
 Add any HTTP/MP3 stream URL. No rebuild needed — just edit the file and restart.
 
+### Player Details
+
+The player module (`src/player.ts`) manages mpg123 child processes with serialized operations:
+
+- **Serialized play/stop:** All operations go through a promise chain (`pendingOperation`) to prevent overlapping spawns
+- **ICY metadata parsing:** Extracts `StreamTitle` from mpg123 stdout/stderr output
+- **Auto-retry on failure:** When mpg123 exits unexpectedly and `desiredChannel` is still set, retries with escalating backoff:
+  - Delays: 5s → 10s → 30s (caps at 30s for subsequent retries)
+  - Retries are cancelled on explicit stop, power off, mode switch, or channel change
+  - `retryCount` resets to 0 when a new channel is selected
+- **Playback resume after WiFi:** `state.ts` exposes `retryPlayback()` which re-emits `channel:change` if in radio mode with a channel selected but not playing. Called from `wifi.ts` after successful `connectToNetwork()`.
+
+Uses absolute path `/usr/bin/mpg123`.
+
 ### Bluetooth Details
 
 The Bluetooth module (`src/bluetooth.ts`) manages:
@@ -115,8 +132,11 @@ PulseAudio runs as the desktop user but the app runs as root. PulseAudio paths a
 The WiFi module (`src/wifi.ts`) provides:
 
 - **Network scanning:** `nmcli device wifi list` with deduplication and signal sorting
-- **Connecting:** `nmcli device wifi connect` — stops hotspot first if active, restarts it if connection fails
+- **Connecting:** `nmcli device wifi connect` — stops hotspot first if active, restarts it if connection fails. Calls `radioState.retryPlayback()` on success to resume radio playback.
 - **Hotspot:** `nmcli device wifi hotspot` — SSID `Radionette-Setup`, password `radionette`, connection name `radionette-hotspot`
+- **Hotspot detection:** `isHotspotActive()` uses `nmcli -t device status` to check if wlan0 is connected to `radionette-hotspot` (works even without connected clients, unlike `nmcli connection show --active`)
+- **WiFi reset:** `resetWifiConfig()` deletes all saved WiFi connection profiles via `nmcli connection delete` and reboots
+- **System reboot:** `rebootSystem()` calls `/usr/sbin/reboot`
 - **Status:** Reads wlan0 device state via `nmcli device show`
 - **Dev mode:** If `nmcli` is unavailable (laptop), returns mock data
 
@@ -137,8 +157,20 @@ Uses absolute path `/usr/bin/nmcli`. The hotspot connection profile (`radionette
 | GET | `/api/wifi/status` | JSON: `{ connected, ssid, ip, hotspotActive }` |
 | GET | `/api/wifi/scan` | JSON: `[{ ssid, signal, security, active }]` |
 | POST | `/api/wifi/connect` | JSON body: `{ ssid, password }` → `{ success, error? }` |
+| POST | `/api/system/wifi-reset` | Delete all saved WiFi networks and reboot |
+| POST | `/api/system/reboot` | Reboot the Pi |
 
 **Pi 3 compatibility:** The BCM43438 WiFi chip on the Pi 3 Model B supports AP mode. Both Pi 3 and Pi 4 support simultaneous AP + managed on the same channel, but the implementation uses a simpler approach: stop AP → connect → restart AP if connection fails.
+
+### Hotspot Alert Details
+
+The hotspot alert module (`src/hotspot-alert.ts`) provides an audible notification when the Pi is in radio mode but has no WiFi configured (hotspot is active):
+
+- **Polling:** Checks `isHotspotActive()` every 5 seconds when in radio mode
+- **Bleep loop:** Plays `hotspot-bleep.wav` (880Hz tone + 3s silence) in a continuous loop via `aplay`
+- **ALSA, not PulseAudio:** Uses `/usr/bin/aplay` instead of `paplay` because the hotspot bleep needs to work at early boot before the PulseAudio session starts
+- **Lifecycle:** Starts polling on `mode:radio`, stops on `mode:bluetooth` or `power:off`
+- **Error handling:** Delays 5s before retrying if `aplay` fails, to avoid tight spin loops
 
 ### Web UI Conventions
 
@@ -254,7 +286,7 @@ PulseAudio should run as the desktop user on login (default on Raspberry Pi OS w
 ~/code/
   dist/           # Compiled JS (deployed from dev machine)
     public/       # index.html, wifi.html, debug.html
-  assets/         # Sound files (bt-connect.wav, bt-ready.wav)
+  assets/         # Sound files (bt-connect.wav, bt-ready.wav, hotspot-bleep.wav)
   channels.json   # Channel configuration
   wifi-fallback.sh # Boot fallback AP script
   package.json

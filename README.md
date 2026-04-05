@@ -8,7 +8,9 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 - **Bluetooth mode:** The Pi becomes a discoverable Bluetooth speaker called "Radionette" (with a speaker icon on your phone). Pair and stream music from any device.
 - **Web status page:** A live dashboard at `http://radionette/` shows current station, now-playing metadata, and Bluetooth status. Tab navigation links to WiFi settings and a debug page.
 - **WiFi configuration:** If the Pi can't connect to a known WiFi network at boot, it creates a hotspot (`Radionette-Setup`, password `radionette`). Connect to the hotspot and visit `http://10.42.0.1/wifi` to configure a network. WiFi settings are also always accessible at `http://radionette/wifi` when connected to the same network.
-- **Debug page:** A live view of GPIO bit state, decoded bank/sub-channel values, full state dump, and grouped channel map at `http://radionette/debug`.
+- **Debug page:** A live view of GPIO bit state, decoded bank/sub-channel values, full state dump, and grouped channel map at `http://radionette/debug`. Includes WiFi reset and system reboot controls.
+- **Hotspot bleep alert:** When the Pi is in radio mode and the hotspot is active (no WiFi configured), a periodic bleep sounds through the speaker to alert the user to set up WiFi.
+- **Auto-retry playback:** If the radio stream fails (e.g. no internet during hotspot mode), the player retries with escalating backoff (5s, 10s, 30s). Playback also resumes automatically when WiFi is configured via the settings page.
 
 ## Hardware
 
@@ -123,6 +125,8 @@ The WiFi settings page is always available at `http://radionette/wifi`, not just
 | GET | `/api/wifi/status` | Current WiFi status (JSON) |
 | GET | `/api/wifi/scan` | Scan for available networks (JSON) |
 | POST | `/api/wifi/connect` | Connect to a network (`{ "ssid": "...", "password": "..." }`) |
+| POST | `/api/system/wifi-reset` | Delete all saved WiFi networks and reboot |
+| POST | `/api/system/reboot` | Reboot the Pi |
 
 ## Development
 
@@ -170,6 +174,7 @@ radionette/
     player.ts         # mpg123 child process management
     bluetooth.ts      # Bluetooth A2DP sink management
     wifi.ts           # WiFi scanning, connecting, hotspot (nmcli)
+    hotspot-alert.ts  # Periodic bleep when hotspot is active in radio mode
     web.ts            # HTTP + WebSocket server
     public/
       index.html      # Status page (single-file, inline CSS/JS)
@@ -179,6 +184,7 @@ radionette/
   assets/
     bt-connect.wav    # Sound: device connected
     bt-ready.wav      # Sound: BT mode active / device disconnected
+    hotspot-bleep.wav # Sound: 880Hz tone + silence, loops while hotspot active
   channels.json       # Station configuration
   deploy.sh           # Build + deploy script
   setup-pi.sh         # One-time Pi setup script
