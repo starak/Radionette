@@ -181,6 +181,27 @@ export function injectGpioValue(rawValue: number): void {
   processValue(rawValue);
 }
 
+/**
+ * Clear any virtual override and revert to the physical pin state.
+ */
+export function resetGpioOverride(): void {
+  ignorePhysicalValue = null;
+  const rawValue = readPins();
+  stableRawValue = rawValue;
+  prevRawValue = rawValue;
+
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+
+  const binary = rawValue.toString(2).padStart(10, "0");
+  const ch = lookupChannel(rawValue & 0xff);
+  const chLabel = ch ? `${ch.number} – ${ch.name}` : "none";
+  console.log(`[GPIO] Reset to physical: Binary: ${binary}  Decimal: ${rawValue}  Channel: ${chLabel}`);
+  processValue(rawValue);
+}
+
 export function stopGpio(): void {
   if (pollTimer) {
     clearInterval(pollTimer);

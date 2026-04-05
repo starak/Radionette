@@ -5,7 +5,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { radioState, RadioState } from "./state";
 import { getAllChannels } from "./channels";
 import { getWifiStatus, scanNetworks, connectToNetwork, resetWifiConfig, rebootSystem } from "./wifi";
-import { injectGpioValue } from "./gpio";
+import { injectGpioValue, resetGpioOverride } from "./gpio";
 
 const PORT = 80;
 
@@ -157,6 +157,13 @@ export function startWebServer(): void {
           res.end(JSON.stringify({ success: false, error: "Invalid JSON" }));
         }
       });
+      return;
+    }
+
+    if (req.url === "/api/debug/gpio/reset" && req.method === "POST") {
+      resetGpioOverride();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ success: true }));
       return;
     }
 

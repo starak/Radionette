@@ -476,7 +476,10 @@
         <button class="dial-btn" data-val="5" onclick="dialSet('sub',5)">5</button>
       </div>
     </div>
-    <div class="dial-note">Physical dial overrides on next change</div>
+    <div class="dial-note">
+      Physical dial overrides on next change
+      <button class="dial-btn" style="margin-left:0.6rem" onclick="dialReset()">Reset to physical</button>
+    </div>
   </div>
 
   <!-- Full state dump -->
@@ -733,6 +736,14 @@
       if (subLabel) dial.sub = parseInt(subLabel[0]);
 
       updateDialButtons();
+    }
+
+    async function dialReset() {
+      try {
+        await fetch('/api/debug/gpio/reset', { method: 'POST' });
+      } catch (e) {
+        console.error('Dial reset error:', e);
+      }
     }
 
     // --- System actions ---
