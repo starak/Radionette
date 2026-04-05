@@ -40,7 +40,7 @@ Power ON + Bluetooth OFF
 |---|---|
 | `src/index.ts` | Entry point — wires modules: channels -> player -> bluetooth -> hotspot-alert -> web -> gpio |
 | `src/state.ts` | Central state singleton + EventEmitter. All modules communicate through this. |
-| `src/gpio.ts` | Reads 10 input pins every 10ms, debounces (50ms), drives state machine, controls LED outputs. Falls back to dev mode when rpio unavailable. Exports `injectGpioValue()` for virtual dial API. |
+| `src/gpio.ts` | Reads 10 input pins every 10ms, debounces (50ms), drives state machine, controls LED outputs. Falls back to dev mode when rpio unavailable. Exports `injectGpioValue()` for virtual dial API and `resetGpioOverride()` to revert to physical pins. |
 | `src/channels.ts` | Loads `channels.json` at startup. Looks up channel number -> name + URL. |
 | `src/player.ts` | Spawns/kills `/usr/bin/mpg123` child processes. Parses ICY stream metadata. Reacts to state events. Auto-retries with escalating backoff (5s, 10s, 30s) when stream fails and desired channel is still set. |
 | `src/bluetooth.ts` | Full Bluetooth A2DP sink management — enable/disable adapter, pairing agent, device monitoring, volume boost, flap detection, auto-reconnect, notification sounds. |
@@ -49,7 +49,7 @@ Power ON + Bluetooth OFF
 | `src/hotspot-alert.ts` | Periodic bleep alert when hotspot is active in radio mode. Uses `aplay` (ALSA) for early-boot compatibility before PulseAudio starts. Polls hotspot status every 5s, loops `hotspot-bleep.wav` via aplay. |
 | `src/public/index.html` | Single-file status page with inline CSS/JS. Dark theme (neutral grey palette via CSS custom properties), live WebSocket updates, tab navigation (Status / WiFi / Debug). Channel list grouped by bank with bank headers. |
 | `src/public/wifi.html` | Single-file WiFi settings page with inline CSS/JS. Same dark theme, tab navigation. Network scan list with signal bars, connect modal with password field, AP-mode warning. |
-| `src/public/debug.html` | Single-file debug page with inline CSS/JS. Same dark theme, tab navigation. Color-coded GPIO bit display (green=power, blue=bluetooth, amber=bank/sub), decoded bank/sub values, virtual dial controls (PWR, BT, Bank, Sub buttons that inject GPIO values via API — physical dial overrides), full state dump table, grouped channel map. System card with WiFi reset and reboot buttons. Live WebSocket updates. |
+| `src/public/debug.html` | Single-file debug page with inline CSS/JS. Same dark theme, tab navigation. Color-coded GPIO bit display (green=power, blue=bluetooth, amber=bank/sub), decoded bank/sub values, virtual dial controls (PWR, BT, Bank, Sub buttons that inject GPIO values via API — physical dial overrides, reset-to-physical button clears override), channel info table, full state dump table, grouped channel map. System card with WiFi reset and reboot buttons. Live WebSocket updates. |
 | `src/gpio-logger.ts` | Standalone utility — logs raw GPIO values on change for mapping physical dial positions. |
 | `channels.json` | Channel configuration — maps dial position numbers to station name + stream URL. Edit this to change stations. |
 | `wifi-fallback.sh` | Boot script — waits 30s for WiFi, starts hotspot if no connection. Installed as a systemd service by `setup-pi.sh`. |
@@ -158,6 +158,7 @@ Uses absolute path `/usr/bin/nmcli`. The hotspot connection profile (`radionette
 | GET | `/api/wifi/scan` | JSON: `[{ ssid, signal, security, active }]` |
 | POST | `/api/wifi/connect` | JSON body: `{ ssid, password }` → `{ success, error? }` |
 | POST | `/api/debug/gpio` | JSON body: `{ value }` (0-1023) → injects synthetic GPIO value. Physical dial overrides on next change. |
+| POST | `/api/debug/gpio/reset` | Clears virtual dial override, reverts to physical GPIO pin state. |
 | POST | `/api/system/wifi-reset` | Delete all saved WiFi networks and reboot |
 | POST | `/api/system/reboot` | Reboot the Pi |
 

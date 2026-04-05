@@ -713,8 +713,8 @@
       const bankLabel = Object.entries(bankLabelToHw).find(([, hw]) => hw === bankRaw);
       const subLabel = Object.entries(subLabelToHw).find(([, hw]) => hw === subRaw);
 
-      if (bankLabel) dial.bank = parseInt(bankLabel[0]);
-      if (subLabel) dial.sub = parseInt(subLabel[0]);
+      dial.bank = bankLabel ? parseInt(bankLabel[0]) : 0;
+      dial.sub = subLabel ? parseInt(subLabel[0]) : 0;
 
       updateDialButtons();
     }
