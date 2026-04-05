@@ -83,21 +83,6 @@
       margin-bottom: 0.8rem;
     }
 
-    .debug-row {
-      font-family: monospace;
-      font-size: 0.9rem;
-      color: var(--text-dim);
-      padding: 0.3rem 0;
-    }
-
-    .debug-row .label {
-      color: var(--text-muted);
-    }
-
-    .debug-row .value {
-      color: var(--text);
-    }
-
     .bit-display {
       display: flex;
       gap: 2px;
@@ -429,15 +414,11 @@
   <!-- Current channel -->
   <div class="card">
     <h2>Channel</h2>
-    <div class="debug-row" id="ch-number">
-      <span class="label">Number:</span> <span class="value">---</span>
-    </div>
-    <div class="debug-row" id="ch-name">
-      <span class="label">Name:</span> <span class="value">---</span>
-    </div>
-    <div class="debug-row" id="ch-url">
-      <span class="label">URL:</span> <span class="value">---</span>
-    </div>
+    <table class="state-table" id="channel-table">
+      <tr><td class="key">number</td><td class="val" id="ch-number">---</td></tr>
+      <tr><td class="key">name</td><td class="val" id="ch-name">---</td></tr>
+      <tr><td class="key">url</td><td class="val" id="ch-url">---</td></tr>
+    </table>
   </div>
 
   <!-- Virtual dial controls -->
@@ -607,13 +588,13 @@
 
       // Channel info
       if (s.channel) {
-        $('ch-number').querySelector('.value').textContent = s.channel.number;
-        $('ch-name').querySelector('.value').textContent = s.channel.name;
-        $('ch-url').querySelector('.value').textContent = s.channel.url || '—';
+        $('ch-number').textContent = s.channel.number;
+        $('ch-name').textContent = s.channel.name;
+        $('ch-url').textContent = s.channel.url || '—';
       } else {
-        $('ch-number').querySelector('.value').textContent = 'none';
-        $('ch-name').querySelector('.value').textContent = '—';
-        $('ch-url').querySelector('.value').textContent = '—';
+        $('ch-number').textContent = 'none';
+        $('ch-name').textContent = '—';
+        $('ch-url').textContent = '—';
       }
 
       // Full state table
