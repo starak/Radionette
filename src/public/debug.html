@@ -314,6 +314,72 @@
 
     .action-result.success { color: var(--accent); }
     .action-result.error { color: var(--red); }
+
+    /* Virtual dial */
+    .dial-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.6rem;
+    }
+
+    .dial-group:last-child { margin-bottom: 0; }
+
+    .dial-label {
+      font-family: monospace;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      width: 3rem;
+      flex-shrink: 0;
+    }
+
+    .dial-buttons {
+      display: flex;
+      gap: 3px;
+    }
+
+    .dial-btn {
+      padding: 0.35rem 0.7rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-family: monospace;
+      background: var(--bg);
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s, color 0.12s;
+      min-width: 2.4rem;
+      text-align: center;
+    }
+
+    .dial-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+    .dial-btn.active-green {
+      background: var(--accent-bg);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .dial-btn.active-blue {
+      background: rgba(107,141,181,0.15);
+      color: var(--blue);
+      border-color: var(--blue);
+    }
+
+    .dial-btn.active-amber {
+      background: var(--amber-bg);
+      color: var(--amber);
+      border-color: var(--amber);
+    }
+
+    .dial-note {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      margin-top: 0.4rem;
+      font-style: italic;
+    }
   </style>
 </head>
 <body>
@@ -372,6 +438,45 @@
     <div class="debug-row" id="ch-url">
       <span class="label">URL:</span> <span class="value">---</span>
     </div>
+  </div>
+
+  <!-- Virtual dial controls -->
+  <div class="card">
+    <h2>Virtual Dial</h2>
+    <div class="dial-group">
+      <span class="dial-label">Pwr</span>
+      <div class="dial-buttons" id="dial-power">
+        <button class="dial-btn" data-val="0" onclick="dialSet('power',0)">Off</button>
+        <button class="dial-btn" data-val="1" onclick="dialSet('power',1)">On</button>
+      </div>
+    </div>
+    <div class="dial-group">
+      <span class="dial-label">BT</span>
+      <div class="dial-buttons" id="dial-bt">
+        <button class="dial-btn" data-val="0" onclick="dialSet('bt',0)">Off</button>
+        <button class="dial-btn" data-val="1" onclick="dialSet('bt',1)">On</button>
+      </div>
+    </div>
+    <div class="dial-group">
+      <span class="dial-label">Bank</span>
+      <div class="dial-buttons" id="dial-bank">
+        <button class="dial-btn" data-val="1" onclick="dialSet('bank',1)">1</button>
+        <button class="dial-btn" data-val="2" onclick="dialSet('bank',2)">2</button>
+        <button class="dial-btn" data-val="3" onclick="dialSet('bank',3)">3</button>
+        <button class="dial-btn" data-val="4" onclick="dialSet('bank',4)">4</button>
+      </div>
+    </div>
+    <div class="dial-group">
+      <span class="dial-label">Sub</span>
+      <div class="dial-buttons" id="dial-sub">
+        <button class="dial-btn" data-val="1" onclick="dialSet('sub',1)">1</button>
+        <button class="dial-btn" data-val="2" onclick="dialSet('sub',2)">2</button>
+        <button class="dial-btn" data-val="3" onclick="dialSet('sub',3)">3</button>
+        <button class="dial-btn" data-val="4" onclick="dialSet('sub',4)">4</button>
+        <button class="dial-btn" data-val="5" onclick="dialSet('sub',5)">5</button>
+      </div>
+    </div>
+    <div class="dial-note">Physical dial overrides on next change</div>
   </div>
 
   <!-- Full state dump -->
@@ -547,12 +652,87 @@
         });
         mapTable.innerHTML = mrows;
       }
+
+      // Sync virtual dial buttons to reflect current GPIO state
+      syncDialFromState(s);
     }
 
     function escHtml(s) {
       const d = document.createElement('div');
       d.textContent = s;
       return d.innerHTML;
+    }
+
+    // --- Virtual dial ---
+
+    // Reverse maps: label -> hardware value
+    const bankLabelToHw = { 1: 12, 2: 8, 3: 10, 4: 3 };
+    const subLabelToHw  = { 1: 0, 2: 1, 3: 8, 4: 10, 5: 12 };
+
+    // Current virtual dial state (labels, not hw values)
+    const dial = { power: 0, bt: 0, bank: 1, sub: 1 };
+
+    function dialComputeRaw() {
+      const bankHw = bankLabelToHw[dial.bank] || 0;
+      const subHw = subLabelToHw[dial.sub] || 0;
+      return (dial.power << 9) | (dial.bt << 8) | (bankHw << 4) | subHw;
+    }
+
+    async function dialSet(field, value) {
+      dial[field] = value;
+      const raw = dialComputeRaw();
+      updateDialButtons();
+      try {
+        await fetch('/api/debug/gpio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value: raw })
+        });
+      } catch (e) {
+        console.error('Virtual dial error:', e);
+      }
+    }
+
+    function updateDialButtons() {
+      // Power
+      const pwrBtns = $('dial-power').children;
+      for (const b of pwrBtns) {
+        b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.power ? ' active-green' : '');
+      }
+      // Bluetooth
+      const btBtns = $('dial-bt').children;
+      for (const b of btBtns) {
+        b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.bt ? ' active-blue' : '');
+      }
+      // Bank
+      const bankBtns = $('dial-bank').children;
+      for (const b of bankBtns) {
+        b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.bank ? ' active-amber' : '');
+      }
+      // Sub
+      const subBtns = $('dial-sub').children;
+      for (const b of subBtns) {
+        b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.sub ? ' active-amber' : '');
+      }
+    }
+
+    // Sync virtual dial state from WebSocket data
+    function syncDialFromState(s) {
+      const raw = s.rawGpio || 0;
+      dial.power = (raw >> 9) & 1;
+      dial.bt = (raw >> 8) & 1;
+
+      const bankRaw = (raw >> 4) & 0xF;
+      const subRaw = raw & 0xF;
+
+      // Find label from hardware value (reverse lookup)
+      const bankLabel = Object.entries(bankLabelToHw).find(([, hw]) => hw === bankRaw);
+      const subLabel = Object.entries(subLabelToHw).find(([, hw]) => hw === subRaw);
+
+      if (bankLabel) dial.bank = parseInt(bankLabel[0]);
+      if (subLabel) dial.sub = parseInt(subLabel[0]);
+
+      updateDialButtons();
     }
 
     // --- System actions ---

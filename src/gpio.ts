@@ -133,6 +133,22 @@ export function startGpio(): void {
   pollTimer = setInterval(poll, POLL_INTERVAL_MS);
 }
 
+/**
+ * Inject a synthetic GPIO value — used by the debug API to simulate
+ * dial changes from the web UI. Sets stableRawValue/prevRawValue so
+ * the normal poll loop won't immediately undo it (the physical dial
+ * will naturally override on its next different reading).
+ */
+export function injectGpioValue(rawValue: number): void {
+  stableRawValue = rawValue;
+  prevRawValue = rawValue;
+  const binary = rawValue.toString(2).padStart(10, "0");
+  const ch = lookupChannel(rawValue & 0xff);
+  const chLabel = ch ? `${ch.number} – ${ch.name}` : "none";
+  console.log(`[GPIO] Injected: Binary: ${binary}  Decimal: ${rawValue}  Channel: ${chLabel}`);
+  processValue(rawValue);
+}
+
 export function stopGpio(): void {
   if (pollTimer) {
     clearInterval(pollTimer);

@@ -5,6 +5,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { radioState, RadioState } from "./state";
 import { getAllChannels } from "./channels";
 import { getWifiStatus, scanNetworks, connectToNetwork, resetWifiConfig, rebootSystem } from "./wifi";
+import { injectGpioValue } from "./gpio";
 
 const PORT = 80;
 
@@ -132,6 +133,28 @@ export function startWebServer(): void {
         } catch (err: any) {
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ success: false, error: err.message }));
+        }
+      });
+      return;
+    }
+
+    if (req.url === "/api/debug/gpio" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", () => {
+        try {
+          const { value } = JSON.parse(body);
+          if (typeof value !== "number" || value < 0 || value > 1023 || !Number.isInteger(value)) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ success: false, error: "value must be an integer 0-1023" }));
+            return;
+          }
+          injectGpioValue(value);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: true, value }));
+        } catch (err: any) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: false, error: "Invalid JSON" }));
         }
       });
       return;
