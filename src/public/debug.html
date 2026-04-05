@@ -238,6 +238,82 @@
 
     .connection-status.connected { background: var(--accent-bg); color: var(--accent); }
     .connection-status.disconnected { background: var(--red-bg); color: var(--red); }
+
+    .system-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+    }
+
+    .system-action {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .system-action .action-info {
+      flex: 1;
+    }
+
+    .system-action .action-label {
+      font-size: 0.9rem;
+      color: var(--text);
+      margin-bottom: 0.15rem;
+    }
+
+    .system-action .action-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .btn {
+      padding: 0.5rem 1.2rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-danger {
+      background: var(--red-bg);
+      color: var(--red);
+      border-color: var(--red);
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: var(--red);
+      color: #fff;
+    }
+
+    .btn-warn {
+      background: var(--amber-bg);
+      color: var(--amber);
+      border-color: var(--amber);
+    }
+
+    .btn-warn:hover:not(:disabled) {
+      background: var(--amber);
+      color: #1a1a1a;
+    }
+
+    .action-result {
+      font-size: 0.8rem;
+      margin-top: 0.3rem;
+      min-height: 1.2em;
+    }
+
+    .action-result.success { color: var(--accent); }
+    .action-result.error { color: var(--red); }
   </style>
 </head>
 <body>
@@ -312,6 +388,29 @@
     <table class="state-table" id="channel-map">
       <tr><td class="key">Loading...</td><td class="val"></td></tr>
     </table>
+  </div>
+
+  <!-- System actions -->
+  <div class="card">
+    <h2>System</h2>
+    <div class="system-actions">
+      <div class="system-action">
+        <div class="action-info">
+          <div class="action-label">Reset WiFi &amp; Reboot</div>
+          <div class="action-desc">Delete all saved WiFi networks and reboot. The setup hotspot will start on boot.</div>
+          <div class="action-result" id="wifi-reset-result"></div>
+        </div>
+        <button class="btn btn-warn" id="btn-wifi-reset" onclick="confirmWifiReset()">Reset</button>
+      </div>
+      <div class="system-action">
+        <div class="action-info">
+          <div class="action-label">Reboot</div>
+          <div class="action-desc">Restart the Raspberry Pi. You will lose connection until it comes back up.</div>
+          <div class="action-result" id="reboot-result"></div>
+        </div>
+        <button class="btn btn-danger" id="btn-reboot" onclick="confirmReboot()">Reboot</button>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -454,6 +553,108 @@
       const d = document.createElement('div');
       d.textContent = s;
       return d.innerHTML;
+    }
+
+    // --- System actions ---
+
+    async function confirmWifiReset() {
+      const btn = $('btn-wifi-reset');
+      const result = $('wifi-reset-result');
+
+      if (btn.dataset.confirm !== 'yes') {
+        btn.dataset.confirm = 'yes';
+        btn.textContent = 'Confirm?';
+        result.textContent = '';
+        result.className = 'action-result';
+        setTimeout(() => {
+          if (btn.dataset.confirm === 'yes') {
+            btn.dataset.confirm = '';
+            btn.textContent = 'Reset';
+          }
+        }, 3000);
+        return;
+      }
+
+      btn.dataset.confirm = '';
+      btn.disabled = true;
+      btn.textContent = 'Resetting...';
+      result.textContent = '';
+      result.className = 'action-result';
+
+      try {
+        const resp = await fetch('/api/system/wifi-reset', { method: 'POST' });
+        const data = await resp.json();
+        if (data.success) {
+          const count = data.deleted ? data.deleted.length : 0;
+          result.textContent = 'Deleted ' + count + ' network' + (count !== 1 ? 's' : '') + ' — rebooting...';
+          result.className = 'action-result success';
+          // Automatically reboot after WiFi reset
+          try {
+            await fetch('/api/system/reboot', { method: 'POST' });
+            const rebootResult = $('reboot-result');
+            $('btn-reboot').disabled = true;
+            $('btn-reboot').textContent = 'Rebooting...';
+            rebootResult.textContent = 'Rebooting — connection will drop shortly...';
+            rebootResult.className = 'action-result success';
+          } catch (e) {
+            // Reboot may have already killed the connection — that's fine
+          }
+        } else {
+          result.textContent = data.error || 'Failed';
+          result.className = 'action-result error';
+          btn.disabled = false;
+          btn.textContent = 'Reset';
+        }
+      } catch (e) {
+        result.textContent = 'Request failed';
+        result.className = 'action-result error';
+        btn.disabled = false;
+        btn.textContent = 'Reset';
+      }
+    }
+
+    async function confirmReboot() {
+      const btn = $('btn-reboot');
+      const result = $('reboot-result');
+
+      if (btn.dataset.confirm !== 'yes') {
+        btn.dataset.confirm = 'yes';
+        btn.textContent = 'Confirm?';
+        result.textContent = '';
+        result.className = 'action-result';
+        setTimeout(() => {
+          if (btn.dataset.confirm === 'yes') {
+            btn.dataset.confirm = '';
+            btn.textContent = 'Reboot';
+          }
+        }, 3000);
+        return;
+      }
+
+      btn.dataset.confirm = '';
+      btn.disabled = true;
+      btn.textContent = 'Rebooting...';
+      result.textContent = '';
+      result.className = 'action-result';
+
+      try {
+        const resp = await fetch('/api/system/reboot', { method: 'POST' });
+        const data = await resp.json();
+        if (data.success) {
+          result.textContent = 'Rebooting — connection will drop shortly...';
+          result.className = 'action-result success';
+        } else {
+          result.textContent = data.error || 'Failed';
+          result.className = 'action-result error';
+          btn.disabled = false;
+          btn.textContent = 'Reboot';
+        }
+      } catch (e) {
+        result.textContent = 'Request failed';
+        result.className = 'action-result error';
+        btn.disabled = false;
+        btn.textContent = 'Reboot';
+      }
     }
 
     connect();

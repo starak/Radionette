@@ -4,7 +4,7 @@ import * as path from "path";
 import { WebSocketServer, WebSocket } from "ws";
 import { radioState, RadioState } from "./state";
 import { getAllChannels } from "./channels";
-import { getWifiStatus, scanNetworks, connectToNetwork } from "./wifi";
+import { getWifiStatus, scanNetworks, connectToNetwork, resetWifiConfig, rebootSystem } from "./wifi";
 
 const PORT = 80;
 
@@ -134,6 +134,30 @@ export function startWebServer(): void {
           res.end(JSON.stringify({ success: false, error: err.message }));
         }
       });
+      return;
+    }
+
+    if (req.url === "/api/system/wifi-reset" && req.method === "POST") {
+      try {
+        const result = await resetWifiConfig();
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+      } catch (err: any) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+      return;
+    }
+
+    if (req.url === "/api/system/reboot" && req.method === "POST") {
+      try {
+        const result = await rebootSystem();
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+      } catch (err: any) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
       return;
     }
 

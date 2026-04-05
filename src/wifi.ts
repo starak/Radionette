@@ -1,7 +1,8 @@
 import { execFile } from "child_process";
 
-// Absolute path — pm2 runs with minimal PATH
+// Absolute paths — pm2 runs with minimal PATH
 const NMCLI = "/usr/bin/nmcli";
+const SYSTEMCTL = "/usr/bin/systemctl";
 
 // Hotspot configuration
 const AP_SSID = "Radionette-Setup";
@@ -302,6 +303,69 @@ export async function isHotspotActive(): Promise<boolean> {
     return false;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Delete all WiFi connection profiles (except loopback and ethernet).
+ * After reboot, the Pi will have no known networks and the wifi-fallback
+ * service will start the Radionette-Setup hotspot.
+ */
+export async function resetWifiConfig(): Promise<{ success: boolean; deleted: string[]; error?: string }> {
+  if (devMode) {
+    return { success: true, deleted: ["DevNetwork (mock)"] };
+  }
+
+  try {
+    // List all connections
+    const output = await nmcli("-t", "-f", "NAME,TYPE", "connection", "show");
+    const lines = output.split("\n").filter((l) => l.trim());
+    const deleted: string[] = [];
+
+    for (const line of lines) {
+      const [name, type] = line.split(":");
+      if (!name || !type) continue;
+      // Only delete wifi connections
+      if (type !== "802-11-wireless") continue;
+      try {
+        await nmcli("connection", "delete", name);
+        deleted.push(name);
+        console.log(`[WiFi] Deleted connection profile: ${name}`);
+      } catch (err: any) {
+        console.error(`[WiFi] Failed to delete "${name}":`, err.message);
+      }
+    }
+
+    console.log(`[WiFi] Reset complete — deleted ${deleted.length} profile(s)`);
+    return { success: true, deleted };
+  } catch (err: any) {
+    console.error("[WiFi] Failed to reset config:", err.message);
+    return { success: false, deleted: [], error: err.message };
+  }
+}
+
+/**
+ * Reboot the system via systemctl.
+ * Responds immediately — the reboot happens asynchronously.
+ */
+export async function rebootSystem(): Promise<{ success: boolean; error?: string }> {
+  if (devMode) {
+    console.log("[System] Reboot requested (dev mode — skipping)");
+    return { success: true };
+  }
+
+  try {
+    console.log("[System] Reboot requested — rebooting in 1 second...");
+    // Use a small delay so the HTTP response can be sent before the system goes down
+    setTimeout(() => {
+      execFile(SYSTEMCTL, ["reboot"], (err) => {
+        if (err) console.error("[System] Reboot failed:", err.message);
+      });
+    }, 1000);
+    return { success: true };
+  } catch (err: any) {
+    console.error("[System] Reboot failed:", err.message);
+    return { success: false, error: err.message };
   }
 }
 
