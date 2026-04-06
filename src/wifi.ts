@@ -7,7 +7,6 @@ const SYSTEMCTL = "/usr/bin/systemctl";
 
 // Hotspot configuration
 const AP_SSID = "Radionette-Setup";
-const AP_PASSWORD = "radionette";
 const AP_CON_NAME = "radionette-hotspot";
 
 export interface WifiNetwork {
@@ -253,20 +252,32 @@ export async function connectToNetwork(
 
 /**
  * Start the WiFi hotspot (access point mode).
+ * Uses an open AP (no password) — WPA-PSK fails on Pi 3 BCM43430 firmware.
  */
 export async function startHotspot(): Promise<void> {
   if (devMode) return;
 
   try {
-    console.log(`[WiFi] Starting hotspot "${AP_SSID}"...`);
+    console.log(`[WiFi] Starting hotspot "${AP_SSID}" (open)...`);
+    // Delete any stale profile first
+    await nmcli("connection", "delete", AP_CON_NAME).catch(() => {});
+    // Create open AP profile
     await nmcli(
-      "device", "wifi", "hotspot",
-      "ifname", "wlan0",
+      "connection", "add",
+      "type", "wifi",
       "con-name", AP_CON_NAME,
+      "ifname", "wlan0",
       "ssid", AP_SSID,
-      "password", AP_PASSWORD
+      "autoconnect", "no",
+      "wifi.mode", "ap",
+      "wifi.band", "bg",
+      "wifi.channel", "6",
+      "ipv4.method", "shared",
+      "ipv4.addresses", "10.42.0.1/24"
     );
-    console.log(`[WiFi] Hotspot active — SSID: ${AP_SSID}, Password: ${AP_PASSWORD}`);
+    // Activate it
+    await nmcli("connection", "up", AP_CON_NAME);
+    console.log(`[WiFi] Hotspot active — SSID: ${AP_SSID} (open, no password)`);
   } catch (err: any) {
     console.error("[WiFi] Failed to start hotspot:", err.message);
     throw err;

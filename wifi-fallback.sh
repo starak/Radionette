@@ -9,7 +9,6 @@ LOGGER="/usr/bin/logger"
 SLEEP="/usr/bin/sleep"
 
 AP_SSID="Radionette-Setup"
-AP_PASSWORD="radionette"
 AP_CON_NAME="radionette-hotspot"
 IFACE="wlan0"
 
@@ -35,12 +34,26 @@ is_connected() {
 }
 
 start_hotspot() {
-  log "Starting fallback hotspot: SSID=$AP_SSID"
-  $NMCLI device wifi hotspot \
-    ifname "$IFACE" \
+  log "Starting fallback hotspot: SSID=$AP_SSID (open)"
+
+  # Delete any stale hotspot profile
+  $NMCLI connection delete "$AP_CON_NAME" 2>/dev/null
+
+  # Create an open AP profile — WPA-PSK fails on Pi 3 BCM43430 firmware
+  $NMCLI connection add \
+    type wifi \
     con-name "$AP_CON_NAME" \
+    ifname "$IFACE" \
     ssid "$AP_SSID" \
-    password "$AP_PASSWORD" 2>&1 | while read -r line; do log "$line"; done
+    autoconnect no \
+    wifi.mode ap \
+    wifi.band bg \
+    wifi.channel 6 \
+    ipv4.method shared \
+    ipv4.addresses 10.42.0.1/24 2>&1 | while read -r line; do log "$line"; done
+
+  # Activate it
+  $NMCLI connection up "$AP_CON_NAME" 2>&1 | while read -r line; do log "$line"; done
 
   if [ "${PIPESTATUS[0]}" -eq 0 ]; then
     log "Hotspot active"

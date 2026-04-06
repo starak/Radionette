@@ -7,7 +7,7 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 - **Radio mode:** A rotary dial switch selects from 15+ internet radio stations via GPIO. Audio plays through the Pi's 3.5mm jack or HDMI.
 - **Bluetooth mode:** The Pi becomes a discoverable Bluetooth speaker called "Radionette" (with a speaker icon on your phone). Pair and stream music from any device.
 - **Web status page:** A live dashboard at `http://radionette/` shows current station, now-playing metadata, and Bluetooth status. Tab navigation links to WiFi settings and a debug page.
-- **WiFi configuration:** If the Pi can't connect to a known WiFi network at boot, it creates a hotspot (`Radionette-Setup`, password `radionette`). Connect to the hotspot and visit `http://10.42.0.1/wifi` to configure a network. WiFi settings are also always accessible at `http://radionette/wifi` when connected to the same network.
+- **WiFi configuration:** If the Pi can't connect to a known WiFi network at boot, it creates an open hotspot (`Radionette-Setup`, no password). Connect to the hotspot and visit `http://10.42.0.1/wifi` to configure a network. WiFi settings are also always accessible at `http://radionette/wifi` when connected to the same network.
 - **Debug page:** A live view of GPIO bit state, decoded bank/sub-channel values, full state dump, and grouped channel map at `http://radionette/debug`. Includes a virtual dial for switching channels from the browser (with a reset-to-physical button), plus WiFi reset and system reboot controls.
 - **Hotspot bleep alert:** When the Pi is in radio mode and the hotspot is active (no WiFi configured), a periodic bleep sounds through the speaker to alert the user to set up WiFi.
 - **Auto-retry playback:** If the radio stream fails (e.g. no internet during hotspot mode), the player retries with escalating backoff (5s, 10s, 30s). Playback also resumes automatically when WiFi is configured via the settings page.
@@ -42,7 +42,7 @@ All input pins use internal pull-down resistors.
 
 ### 1. OS & Network
 
-1. Flash **Raspberry Pi OS** (with desktop, for PulseAudio)
+1. Flash **Raspberry Pi OS** (desktop or headless — PulseAudio auto-starts via socket activation)
 2. Set hostname to `radionette`
 3. Enable SSH
 4. Ensure the Pi is reachable as `ssh radionette` from your dev machine (via mDNS or SSH config)
@@ -102,9 +102,9 @@ The Radionette includes a built-in WiFi configuration system so you can set up t
 ### How It Works
 
 1. **On boot**, the `wifi-fallback` systemd service waits 30 seconds for the Pi to connect to a known WiFi network.
-2. **If no connection is established**, the Pi starts a WiFi hotspot:
+2. **If no connection is established**, the Pi starts an open WiFi hotspot:
    - **SSID:** `Radionette-Setup`
-   - **Password:** `radionette`
+   - **No password** (open network — the Pi 3 BCM43430 firmware doesn't support WPA in AP mode)
 3. **Connect** your phone or laptop to the hotspot, then open `http://10.42.0.1/wifi` in a browser.
 4. **Select a network** from the scan list, enter the password, and tap Connect.
 5. **The Pi connects** to the new network and the hotspot shuts down automatically. Reconnect your device to the same network and visit `http://radionette/` to verify.
@@ -147,7 +147,7 @@ Some files contain settings specific to this setup that you'll want to adapt:
 
 - **`deploy.sh`** — The `REMOTE` variable is set to `radionette` (SSH hostname). Change this to match your Pi's hostname or IP. The Node.js path is detected automatically.
 - **`channels.json`** — Pre-configured with Norwegian radio stations (NRK, P4, etc.). Replace with your own station URLs.
-- **`src/bluetooth.ts`** — PulseAudio paths are detected at runtime based on the OS user (via `SUDO_UID`/`SUDO_USER` env vars). No manual changes needed.
+- **`src/bluetooth.ts`** — PulseAudio commands (`paplay`, `pactl`) run as the desktop user via `sudo -u`. The username is detected from `SUDO_USER` env var. No manual changes needed.
 
 ## Configuring Stations
 

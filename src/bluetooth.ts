@@ -1,6 +1,5 @@
 import { ChildProcess, spawn, execFile } from "child_process";
 import { radioState } from "./state";
-import os from "os";
 import path from "path";
 
 const BT_ALIAS = "Radionette";
@@ -89,13 +88,12 @@ function run(cmd: string, args: string[], env?: Record<string, string>): Promise
 
 // Build PulseAudio paths dynamically based on the current OS user.
 // The app runs as root (for GPIO), but PulseAudio runs under the desktop
-// user. We detect uid and homedir from the SUDO_UID / SUDO_USER env vars
-// (set when running via sudo), falling back to the system user "pi" defaults.
-const pulseUid = process.env.SUDO_UID || String(os.userInfo().uid);
-const pulseHome =
-  process.env.SUDO_USER
-    ? `/home/${process.env.SUDO_USER}`
-    : os.userInfo().homedir;
+// user. We detect the username from the SUDO_USER env var (set when running
+// via sudo/pm2), falling back to "pi". PulseAudio rejects connections from
+// root even with the correct cookie, so we run paplay/pactl via sudo -u.
+const pulseUser = process.env.SUDO_USER || "pi";
+const pulseUid = process.env.SUDO_UID || "1000";
+const pulseHome = `/home/${pulseUser}`;
 
 const PULSE_ENV = {
   PULSE_SERVER: `unix:/run/user/${pulseUid}/pulse/native`,
@@ -103,18 +101,38 @@ const PULSE_ENV = {
 };
 
 /**
+ * Run a command as the PulseAudio user (not root).
+ * PulseAudio rejects connections from root, so paplay/pactl must run
+ * as the desktop user who owns the PulseAudio session.
+ */
+function runAsPulseUser(cmd: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const env = {
+      ...PULSE_ENV,
+      HOME: pulseHome,
+      XDG_RUNTIME_DIR: `/run/user/${pulseUid}`,
+    };
+    const envArgs = Object.entries(env).map(([k, v]) => `${k}=${v}`);
+    execFile("/usr/bin/sudo", ["-u", pulseUser, "env", ...envArgs, cmd, ...args], {
+      timeout: 5000,
+    }, (err: any, stdout: string) => {
+      if (err) {
+        reject(new Error(`${cmd} ${args.join(" ")} failed: ${err.message}`));
+      } else {
+        resolve((stdout || "").trim());
+      }
+    });
+  });
+}
+
+/**
  * Play a short sound file through PulseAudio.
  * Fire-and-forget — errors are logged but don't block anything.
  */
 function playSound(name: string): void {
   const file = path.join(ASSETS_DIR, `${name}.wav`);
-  execFile(PAPLAY, [file], {
-    timeout: 5000,
-    env: { ...process.env, ...PULSE_ENV },
-  }, (err) => {
-    if (err) {
-      console.error(`[Bluetooth] Could not play sound ${name}:`, err.message);
-    }
+  runAsPulseUser(PAPLAY, [file]).catch((err) => {
+    console.error(`[Bluetooth] Could not play sound ${name}:`, err.message);
   });
 }
 
@@ -131,7 +149,7 @@ async function boostBluetoothVolume(retries = 5): Promise<void> {
 
   try {
     // List sink-inputs and find Bluetooth ones
-    const output = await run(PACTL, ["list", "sink-inputs"], PULSE_ENV);
+    const output = await runAsPulseUser(PACTL, ["list", "sink-inputs"]);
 
     // Parse sink-input blocks
     const blocks = output.split("Sink Input #");
@@ -143,7 +161,7 @@ async function boostBluetoothVolume(retries = 5): Promise<void> {
         const idMatch = block.match(/^(\d+)/);
         if (idMatch) {
           const id = idMatch[1];
-          await run(PACTL, ["set-sink-input-volume", id, BT_VOLUME], PULSE_ENV);
+          await runAsPulseUser(PACTL, ["set-sink-input-volume", id, BT_VOLUME]);
           console.log(`[Bluetooth] Boosted sink-input #${id} volume to ${BT_VOLUME}`);
           boosted = true;
         }

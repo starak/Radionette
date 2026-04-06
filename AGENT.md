@@ -125,7 +125,7 @@ The Bluetooth module (`src/bluetooth.ts`) manages:
 
 All system binaries use absolute paths (`/usr/sbin/rfkill`, `/usr/bin/bluetoothctl`, `/usr/bin/pactl`, `/usr/bin/paplay`) because pm2 runs with a minimal PATH.
 
-PulseAudio runs as the desktop user but the app runs as root. PulseAudio paths are detected at runtime using `SUDO_UID`/`SUDO_USER` environment variables (set automatically by `sudo`), falling back to `os.userInfo()`. No hardcoded user paths.
+PulseAudio runs as the desktop user (`pi`) but the app runs as root. PulseAudio rejects connections from root even with the correct auth cookie, so `paplay` and `pactl` are run via `sudo -u pi` with explicit `PULSE_SERVER` and `PULSE_COOKIE` env vars. The username is detected from `SUDO_USER` env var (set by pm2's sudo chain), falling back to `"pi"`. On headless Pi (no desktop), PulseAudio starts via socket activation or user service when first needed.
 
 ### WiFi Details
 
@@ -133,7 +133,7 @@ The WiFi module (`src/wifi.ts`) provides:
 
 - **Network scanning:** `nmcli device wifi list` with deduplication and signal sorting
 - **Connecting:** `nmcli device wifi connect` — stops hotspot first if active, restarts it if connection fails. Calls `radioState.retryPlayback()` on success to resume radio playback.
-- **Hotspot:** `nmcli device wifi hotspot` — SSID `Radionette-Setup`, password `radionette`, connection name `radionette-hotspot`
+- **Hotspot:** Open AP (no password) via `nmcli connection add` — SSID `Radionette-Setup`, connection name `radionette-hotspot`. WPA-PSK is not used because the Pi 3 BCM43430 firmware has a bug where AP mode fails with `key setting validation failed`.
 - **Hotspot detection:** `isHotspotActive()` uses `nmcli -t device status` to check if wlan0 is connected to `radionette-hotspot` (works even without connected clients, unlike `nmcli connection show --active`)
 - **WiFi reset:** `resetWifiConfig()` deletes all saved WiFi connection profiles via `nmcli connection delete` and reboots
 - **System reboot:** `rebootSystem()` calls `/usr/sbin/reboot`
