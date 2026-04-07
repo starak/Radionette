@@ -6,16 +6,17 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 
 - **Radio mode:** A rotary dial switch selects from 15+ internet radio stations via GPIO. Audio plays through the Pi's 3.5mm jack or HDMI.
 - **Bluetooth mode:** The Pi becomes a discoverable Bluetooth speaker called "Radionette" (with a speaker icon on your phone). Pair and stream music from any device.
-- **Web status page:** A live dashboard at `http://radionette/` shows current station, now-playing metadata, and Bluetooth status. Tab navigation links to WiFi settings and a debug page.
-- **WiFi configuration:** If the Pi can't connect to a known WiFi network at boot, it creates an open hotspot (`Radionette-Setup`, no password). Connect to the hotspot and visit `http://10.42.0.1/wifi` to configure a network. WiFi settings are also always accessible at `http://radionette/wifi` when connected to the same network.
-- **Debug page:** A live view of GPIO bit state, decoded bank/sub-channel values, full state dump, and grouped channel map at `http://radionette/debug`. Includes a virtual dial for switching channels from the browser (with a reset-to-physical button), plus WiFi reset and system reboot controls.
+- **Web status page:** A live dashboard at `http://radionette.local:8080/` shows current station, now-playing metadata, and Bluetooth status. Tab navigation links to WiFi settings and a debug page.
+- **WiFi configuration:** If the Pi can't connect to a known WiFi network at boot, it creates an open hotspot (`Radionette-Setup`, no password). Connect to the hotspot and visit `http://10.42.0.1:8080/wifi` to configure a network. WiFi settings are also always accessible at `http://radionette.local:8080/wifi` when connected to the same network.
+- **Debug page:** A live view of GPIO bit state, decoded bank/sub-channel values, full state dump, and grouped channel map at `http://radionette.local:8080/debug`. Includes a virtual dial for switching channels from the browser (with a reset-to-physical button), plus WiFi reset and system reboot controls.
 - **Hotspot bleep alert:** When the Pi is in radio mode and the hotspot is active (no WiFi configured), a periodic bleep sounds through the speaker to alert the user to set up WiFi.
 - **Auto-retry playback:** If the radio stream fails (e.g. no internet during hotspot mode), the player retries with escalating backoff (5s, 10s, 30s). Playback also resumes automatically when WiFi is configured via the settings page.
 
 ## Hardware
 
-- Raspberry Pi 3 Model B
+- Raspberry Pi 4 Model B
 - Rotary dial switch wired to 10 GPIO input pins
+- Mono/stereo switch on 1 GPIO input pin
 - 2 LEDs (power + Bluetooth indicator)
 - Audio output via 3.5mm jack or HDMI
 
@@ -33,6 +34,7 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 | 16 | Input | Channel bit 7 |
 | 20 | Input | Bluetooth mode |
 | 21 | Input | Power indicator |
+| 19 | Input | Mono audio (HIGH = mono, LOW = stereo) |
 | 11 | Output | Power LED |
 | 26 | Output | Bluetooth LED |
 
@@ -45,29 +47,19 @@ All input pins use internal pull-down resistors.
 1. Flash **Raspberry Pi OS** (desktop or headless — PulseAudio auto-starts via socket activation)
 2. Set hostname to `radionette`
 3. Enable SSH
-4. Ensure the Pi is reachable as `ssh radionette` from your dev machine (via mDNS or SSH config)
+4. Ensure the Pi is reachable as `ssh pi@radionette.local` from your dev machine (via mDNS)
 
-### 2. Node.js
+### 2. Automated Setup
 
-Install Node.js v24 via [nvm](https://github.com/nvm-sh/nvm):
-
-```bash
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-source ~/.bashrc
-nvm install v24.14.1
-```
-
-### 3. Automated Setup
-
-The `setup-pi.sh` script handles everything else: system packages, Bluetooth configuration, pm2 installation, and boot persistence. Run it from your dev machine:
+The `setup-pi.sh` script handles everything: nvm, Node.js LTS, system packages, Bluetooth configuration, pm2 installation, and boot persistence. Run it from your dev machine:
 
 ```bash
-ssh radionette 'bash -s' < setup-pi.sh
+ssh pi@radionette.local 'bash -s' < setup-pi.sh
 ```
 
-This installs `mpg123`, `bluez`, `rfkill`, `pulseaudio` (+ Bluetooth module), `build-essential`, and `python3`. It configures the Bluetooth device class for the speaker icon, installs pm2, sets up auto-start on boot, and installs the wifi-fallback systemd service.
+This installs nvm and Node.js LTS, then installs `mpg123`, `bluez`, `rfkill`, `pulseaudio` (+ Bluetooth module), `build-essential`, and `python3`. It configures the Bluetooth device class for the speaker icon, installs pm2, sets up auto-start on boot, and installs the wifi-fallback systemd service.
 
-### 4. First Deploy
+### 3. First Deploy
 
 From your dev machine (requires Node.js and npm locally):
 
@@ -87,11 +79,9 @@ pm2 start ~/code/dist/index.js --name radionette --cwd ~/code
 pm2 save
 ```
 
-(The `pm2` alias was added to `~/.bashrc` by the setup script — it handles sudo and PATH automatically.)
+### 4. Verify
 
-### 5. Verify
-
-- Open `http://radionette/` in a browser — you should see the status page
+- Open `http://radionette.local:8080/` in a browser — you should see the status page
 - Turn the dial — the station should change and audio should play
 - Switch to Bluetooth mode — "Radionette" should appear as a speaker on your phone
 
@@ -104,14 +94,14 @@ The Radionette includes a built-in WiFi configuration system so you can set up t
 1. **On boot**, the `wifi-fallback` systemd service waits 30 seconds for the Pi to connect to a known WiFi network.
 2. **If no connection is established**, the Pi starts an open WiFi hotspot:
    - **SSID:** `Radionette-Setup`
-   - **No password** (open network — the Pi 3 BCM43430 firmware doesn't support WPA in AP mode)
-3. **Connect** your phone or laptop to the hotspot, then open `http://10.42.0.1/wifi` in a browser.
+   - **No password** (open network)
+3. **Connect** your phone or laptop to the hotspot, then open `http://10.42.0.1:8080/wifi` in a browser.
 4. **Select a network** from the scan list, enter the password, and tap Connect.
-5. **The Pi connects** to the new network and the hotspot shuts down automatically. Reconnect your device to the same network and visit `http://radionette/` to verify.
+5. **The Pi connects** to the new network and the hotspot shuts down automatically. Reconnect your device to the same network and visit `http://radionette.local:8080/` to verify.
 
 ### WiFi Settings Page
 
-The WiFi settings page is always available at `http://radionette/wifi`, not just in hotspot mode. Use it to:
+The WiFi settings page is always available at `http://radionette.local:8080/wifi`, not just in hotspot mode. Use it to:
 - View the current WiFi connection status
 - Scan for available networks
 - Connect to a different network
@@ -145,9 +135,9 @@ When running on a machine without GPIO (e.g. your laptop), the app falls back to
 
 Some files contain settings specific to this setup that you'll want to adapt:
 
-- **`deploy.sh`** — The `REMOTE` variable is set to `radionette` (SSH hostname). Change this to match your Pi's hostname or IP. The Node.js path is detected automatically.
+- **`deploy.sh`** — The `REMOTE` variable is set to `radionette.local` (mDNS hostname). Change this to match your Pi's hostname or IP. The Node.js path is detected automatically.
 - **`channels.json`** — Pre-configured with Norwegian radio stations (NRK, P4, etc.). Replace with your own station URLs.
-- **`src/bluetooth.ts`** — PulseAudio commands (`paplay`, `pactl`) run as the desktop user via `sudo -u`. The username is detected from `SUDO_USER` env var. No manual changes needed.
+- **`src/bluetooth.ts`** — PulseAudio commands (`paplay`, `pactl`) run natively as the `pi` user. The `rfkill` command runs via `sudo`. No manual changes needed.
 
 ## Configuring Stations
 
@@ -175,6 +165,7 @@ radionette/
     channels.ts       # Channel lookup from channels.json
     player.ts         # mpg123 child process management
     bluetooth.ts      # Bluetooth A2DP sink management
+    audio.ts          # Mono/stereo mixing (PulseAudio remap-sink)
     wifi.ts           # WiFi scanning, connecting, hotspot (nmcli)
     hotspot-alert.ts  # Periodic bleep when hotspot is active in radio mode
     web.ts            # HTTP + WebSocket server

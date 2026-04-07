@@ -12,12 +12,13 @@ try {
 }
 
 // GPIO pin assignments (BCM numbering)
-// Bits 0-7: channel selector, Bit 8: bluetooth, Bit 9: power
+// Bits 0-7: channel selector, Bit 8: bluetooth, Bit 9: power, Bit 10: mono
 const CHANNEL_PINS: readonly number[] = [18, 23, 24, 25, 8, 7, 12, 16]; // bits 0-7
 const BLUETOOTH_PIN = 20; // bit 8
 const POWER_PIN = 21; // bit 9
+const MONO_PIN = 19; // bit 10
 
-const ALL_INPUT_PINS = [...CHANNEL_PINS, BLUETOOTH_PIN, POWER_PIN];
+const ALL_INPUT_PINS = [...CHANNEL_PINS, BLUETOOTH_PIN, POWER_PIN, MONO_PIN];
 
 // Output pins — indicator lights
 const POWER_LED_PIN = 11;     // Power indicator light
@@ -54,8 +55,12 @@ function processValue(rawValue: number): void {
   const channelBits = rawValue & 0xff; // bits 0-7
   const bluetoothBit = (rawValue >> 8) & 1; // bit 8
   const powerBit = (rawValue >> 9) & 1; // bit 9
+  const monoBit = (rawValue >> 10) & 1; // bit 10
 
   radioState.setRawGpio(rawValue);
+
+  // Mono is independent of power/mode — always update
+  radioState.setMono(monoBit === 1);
 
   // Power check first — if off, everything stops
   radioState.setPower(powerBit === 1);
@@ -111,7 +116,7 @@ function poll(): void {
     debounceTimer = setTimeout(() => {
       if (rawValue !== stableRawValue) {
         stableRawValue = rawValue;
-        const binary = rawValue.toString(2).padStart(10, "0");
+        const binary = rawValue.toString(2).padStart(11, "0");
         const ch = lookupChannel(rawValue & 0xff);
         const chLabel = ch ? `${ch.number} – ${ch.name}` : "none";
         console.log(`[GPIO] Binary: ${binary}  Decimal: ${rawValue}  Channel: ${chLabel}`);
@@ -174,7 +179,7 @@ export function injectGpioValue(rawValue: number): void {
     debounceTimer = null;
   }
 
-  const binary = rawValue.toString(2).padStart(10, "0");
+  const binary = rawValue.toString(2).padStart(11, "0");
   const ch = lookupChannel(rawValue & 0xff);
   const chLabel = ch ? `${ch.number} – ${ch.name}` : "none";
   console.log(`[GPIO] Injected: Binary: ${binary}  Decimal: ${rawValue}  Channel: ${chLabel}`);
@@ -195,7 +200,7 @@ export function resetGpioOverride(): void {
     debounceTimer = null;
   }
 
-  const binary = rawValue.toString(2).padStart(10, "0");
+  const binary = rawValue.toString(2).padStart(11, "0");
   const ch = lookupChannel(rawValue & 0xff);
   const chLabel = ch ? `${ch.number} – ${ch.name}` : "none";
   console.log(`[GPIO] Reset to physical: Binary: ${binary}  Decimal: ${rawValue}  Channel: ${chLabel}`);

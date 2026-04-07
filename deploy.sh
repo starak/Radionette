@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-REMOTE="radionette"
+REMOTE="pi@radionette.local"
 REMOTE_DIR="~/code"
 
 # Detect the remote user's nvm Node.js path dynamically.
@@ -47,7 +47,7 @@ echo "Installing dependencies on Pi..."
 ssh "${REMOTE}" "export NVM_DIR=\$HOME/.nvm; [ -s \$NVM_DIR/nvm.sh ] && . \$NVM_DIR/nvm.sh; cd ${REMOTE_DIR} && npm install --omit=dev"
 
 echo "Restarting app via pm2..."
-ssh "${REMOTE}" "sudo env PATH=${NODE_BIN}:\$PATH pm2 restart radionette 2>/dev/null || sudo env PATH=${NODE_BIN}:\$PATH pm2 start ${REMOTE_DIR}/dist/index.js --name radionette --cwd ${REMOTE_DIR}"
+ssh "${REMOTE}" "export NVM_DIR=\$HOME/.nvm; [ -s \$NVM_DIR/nvm.sh ] && . \$NVM_DIR/nvm.sh; pm2 restart radionette 2>/dev/null || pm2 start ${REMOTE_DIR}/dist/index.js --name radionette --cwd ${REMOTE_DIR}; pm2 save"
 
 echo ""
 echo "Deploy complete. App restarted."

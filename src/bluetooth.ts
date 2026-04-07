@@ -6,6 +6,7 @@ const BT_ALIAS = "Radionette";
 const BT_VOLUME = "120%";
 
 // Absolute paths — pm2 runs with minimal PATH, /usr/sbin may be missing
+const SUDO = "/usr/bin/sudo";
 const RFKILL = "/usr/sbin/rfkill";
 const BLUETOOTHCTL = "/usr/bin/bluetoothctl";
 const PACTL = "/usr/bin/pactl";
@@ -86,44 +87,8 @@ function run(cmd: string, args: string[], env?: Record<string, string>): Promise
   });
 }
 
-// Build PulseAudio paths dynamically based on the current OS user.
-// The app runs as root (for GPIO), but PulseAudio runs under the desktop
-// user. We detect the username from the SUDO_USER env var (set when running
-// via sudo/pm2), falling back to "pi". PulseAudio rejects connections from
-// root even with the correct cookie, so we run paplay/pactl via sudo -u.
-const pulseUser = process.env.SUDO_USER || "pi";
-const pulseUid = process.env.SUDO_UID || "1000";
-const pulseHome = `/home/${pulseUser}`;
-
-const PULSE_ENV = {
-  PULSE_SERVER: `unix:/run/user/${pulseUid}/pulse/native`,
-  PULSE_COOKIE: `${pulseHome}/.config/pulse/cookie`,
-};
-
-/**
- * Run a command as the PulseAudio user (not root).
- * PulseAudio rejects connections from root, so paplay/pactl must run
- * as the desktop user who owns the PulseAudio session.
- */
-function runAsPulseUser(cmd: string, args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const env = {
-      ...PULSE_ENV,
-      HOME: pulseHome,
-      XDG_RUNTIME_DIR: `/run/user/${pulseUid}`,
-    };
-    const envArgs = Object.entries(env).map(([k, v]) => `${k}=${v}`);
-    execFile("/usr/bin/sudo", ["-u", pulseUser, "env", ...envArgs, cmd, ...args], {
-      timeout: 5000,
-    }, (err: any, stdout: string) => {
-      if (err) {
-        reject(new Error(`${cmd} ${args.join(" ")} failed: ${err.message}`));
-      } else {
-        resolve((stdout || "").trim());
-      }
-    });
-  });
-}
+// The app runs as the `pi` user, which owns the PulseAudio session.
+// No sudo wrapper needed — paplay/pactl connect natively via XDG_RUNTIME_DIR.
 
 /**
  * Play a short sound file through PulseAudio.
@@ -131,7 +96,7 @@ function runAsPulseUser(cmd: string, args: string[]): Promise<string> {
  */
 function playSound(name: string): void {
   const file = path.join(ASSETS_DIR, `${name}.wav`);
-  runAsPulseUser(PAPLAY, [file]).catch((err) => {
+  run(PAPLAY, [file]).catch((err) => {
     console.error(`[Bluetooth] Could not play sound ${name}:`, err.message);
   });
 }
@@ -149,7 +114,7 @@ async function boostBluetoothVolume(retries = 5): Promise<void> {
 
   try {
     // List sink-inputs and find Bluetooth ones
-    const output = await runAsPulseUser(PACTL, ["list", "sink-inputs"]);
+    const output = await run(PACTL, ["list", "sink-inputs"]);
 
     // Parse sink-input blocks
     const blocks = output.split("Sink Input #");
@@ -161,7 +126,7 @@ async function boostBluetoothVolume(retries = 5): Promise<void> {
         const idMatch = block.match(/^(\d+)/);
         if (idMatch) {
           const id = idMatch[1];
-          await runAsPulseUser(PACTL, ["set-sink-input-volume", id, BT_VOLUME]);
+          await run(PACTL, ["set-sink-input-volume", id, BT_VOLUME]);
           console.log(`[Bluetooth] Boosted sink-input #${id} volume to ${BT_VOLUME}`);
           boosted = true;
         }
@@ -470,8 +435,8 @@ async function enableBluetooth(): Promise<void> {
   flapResetTimers.clear();
 
   try {
-    // Unblock the adapter
-    await run(RFKILL, ["unblock", "bluetooth"]);
+    // Unblock the adapter (needs sudo — /dev/rfkill is not writable by pi)
+    await run(SUDO, [RFKILL, "unblock", "bluetooth"]);
 
     // Wait for BlueZ to notice the adapter is unblocked
     await sleep(500);

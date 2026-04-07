@@ -382,12 +382,17 @@
     <h2>GPIO Input</h2>
     <div class="bit-display" id="bit-display"></div>
     <div class="bit-labels">
+      <div class="bit-label-group lbl-green" style="width:28px">mono</div>
       <div class="bit-label-group lbl-green" style="width:28px">pwr</div>
       <div class="bit-label-group lbl-blue" style="width:28px">bt</div>
       <div class="bit-label-group lbl-amber" style="width:118px">bank [7:4]</div>
       <div class="bit-label-group lbl-amber" style="width:118px">sub [3:0]</div>
     </div>
     <div id="decoded-fields">
+      <div class="decoded-row">
+        <span class="decoded-label">Mono (bit 10)</span>
+        <span class="decoded-value" id="dec-mono">---</span>
+      </div>
       <div class="decoded-row">
         <span class="decoded-label">Power (bit 9)</span>
         <span class="decoded-value" id="dec-power">---</span>
@@ -455,6 +460,13 @@
         <button class="dial-btn" data-val="3" onclick="dialSet('sub',3)">3</button>
         <button class="dial-btn" data-val="4" onclick="dialSet('sub',4)">4</button>
         <button class="dial-btn" data-val="5" onclick="dialSet('sub',5)">5</button>
+      </div>
+    </div>
+    <div class="dial-group">
+      <span class="dial-label">Mono</span>
+      <div class="dial-buttons" id="dial-mono">
+        <button class="dial-btn" data-val="0" onclick="dialSet('mono',0)">Off</button>
+        <button class="dial-btn" data-val="1" onclick="dialSet('mono',1)">On</button>
       </div>
     </div>
     <div class="dial-note">
@@ -538,18 +550,19 @@
 
     function update(s) {
       const raw = s.rawGpio || 0;
-      const bin = (raw >>> 0).toString(2).padStart(10, '0');
+      const bin = (raw >>> 0).toString(2).padStart(11, '0');
 
-      // Bit groups: [9]=power, [8]=bluetooth, [7:4]=bank, [3:0]=sub
-      // bin string index: 0=bit9, 1=bit8, 2-5=bits7-4, 6-9=bits3-0
+      // Bit groups: [10]=mono, [9]=power, [8]=bluetooth, [7:4]=bank, [3:0]=sub
+      // bin string index: 0=bit10, 1=bit9, 2=bit8, 3-6=bits7-4, 7-10=bits3-0
       const bitDiv = $('bit-display');
       bitDiv.innerHTML = '';
 
       const groups = [
-        { bits: bin.slice(0, 1), color: 'green' },   // bit 9: power
-        { bits: bin.slice(1, 2), color: 'blue' },     // bit 8: bluetooth
-        { bits: bin.slice(2, 6), color: 'amber' },    // bits 7-4: bank
-        { bits: bin.slice(6, 10), color: 'amber' },   // bits 3-0: sub
+        { bits: bin.slice(0, 1), color: 'green' },   // bit 10: mono
+        { bits: bin.slice(1, 2), color: 'green' },    // bit 9: power
+        { bits: bin.slice(2, 3), color: 'blue' },     // bit 8: bluetooth
+        { bits: bin.slice(3, 7), color: 'amber' },    // bits 7-4: bank
+        { bits: bin.slice(7, 11), color: 'amber' },   // bits 3-0: sub
       ];
 
       groups.forEach((g, gi) => {
@@ -569,6 +582,7 @@
       const subMap = { 0: 1, 1: 2, 8: 3, 10: 4, 12: 5 };
 
       // Decoded values
+      const mono = (raw >> 10) & 1;
       const power = (raw >> 9) & 1;
       const bt = (raw >> 8) & 1;
       const bankRaw = (raw >> 4) & 0xF;
@@ -576,6 +590,8 @@
       const bankLabel = bankMap[bankRaw];
       const subLabel = subMap[subRaw];
 
+      $('dec-mono').textContent = mono ? 'ON' : 'OFF';
+      $('dec-mono').className = 'decoded-value' + (mono ? ' clr-green' : '');
       $('dec-power').textContent = power ? 'ON' : 'OFF';
       $('dec-power').className = 'decoded-value' + (power ? ' clr-green' : '');
       $('dec-bt').textContent = bt ? 'ON' : 'OFF';
@@ -599,7 +615,7 @@
 
       // Full state table
       const stateTable = $('state-table');
-      const stateKeys = ['power', 'mode', 'playing', 'bluetooth', 'bluetoothDevice', 'metadata', 'rawGpio'];
+      const stateKeys = ['power', 'mode', 'playing', 'bluetooth', 'bluetoothDevice', 'mono', 'metadata', 'rawGpio'];
       let rows = '';
       stateKeys.forEach(k => {
         const v = s[k];
@@ -654,12 +670,12 @@
     const subLabelToHw  = { 1: 0, 2: 1, 3: 8, 4: 10, 5: 12 };
 
     // Current virtual dial state (labels, not hw values)
-    const dial = { power: 0, bt: 0, bank: 1, sub: 1 };
+    const dial = { power: 0, bt: 0, bank: 1, sub: 1, mono: 0 };
 
     function dialComputeRaw() {
       const bankHw = bankLabelToHw[dial.bank] || 0;
       const subHw = subLabelToHw[dial.sub] || 0;
-      return (dial.power << 9) | (dial.bt << 8) | (bankHw << 4) | subHw;
+      return (dial.mono << 10) | (dial.power << 9) | (dial.bt << 8) | (bankHw << 4) | subHw;
     }
 
     async function dialSet(field, value) {
@@ -698,11 +714,17 @@
       for (const b of subBtns) {
         b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.sub ? ' active-amber' : '');
       }
+      // Mono
+      const monoBtns = $('dial-mono').children;
+      for (const b of monoBtns) {
+        b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.mono ? ' active-green' : '');
+      }
     }
 
     // Sync virtual dial state from WebSocket data
     function syncDialFromState(s) {
       const raw = s.rawGpio || 0;
+      dial.mono = (raw >> 10) & 1;
       dial.power = (raw >> 9) & 1;
       dial.bt = (raw >> 8) & 1;
 

@@ -16,6 +16,7 @@ export interface RadioState {
   channel: ChannelInfo | null;
   playing: boolean;
   metadata: string | null;
+  mono: boolean;
   rawGpio: number;
 }
 
@@ -28,6 +29,8 @@ export interface RadioEvents {
   "player:playing": [channel: ChannelInfo];
   "player:stopped": [];
   "player:metadata": [metadata: string];
+  "mono:on": [];
+  "mono:off": [];
   "state:change": [state: RadioState];
 }
 
@@ -40,6 +43,7 @@ class RadioStateEmitter extends EventEmitter {
     channel: null,
     playing: false,
     metadata: null,
+    mono: false,
     rawGpio: 0,
   };
 
@@ -130,6 +134,17 @@ class RadioStateEmitter extends EventEmitter {
   setBluetoothDevice(name: string | null): void {
     if (this._state.bluetoothDevice === name) return;
     this._state.bluetoothDevice = name;
+    this.emitStateChange();
+  }
+
+  setMono(on: boolean): void {
+    if (this._state.mono === on) return;
+    this._state.mono = on;
+    if (on) {
+      this.emit("mono:on");
+    } else {
+      this.emit("mono:off");
+    }
     this.emitStateChange();
   }
 

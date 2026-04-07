@@ -215,6 +215,10 @@
       <div id="play-dot" class="dot off"></div>
       <span class="mode-label" id="play-label">Stopped</span>
     </div>
+    <div class="indicator">
+      <div id="mono-dot" class="dot off"></div>
+      <span class="mode-label" id="mono-label">Stereo</span>
+    </div>
   </div>
 
   <div class="status-card now-playing" id="now-playing-card">
@@ -285,6 +289,10 @@
       // Playing
       $('play-dot').className = 'dot ' + (s.playing ? 'on' : 'off');
       $('play-label').textContent = s.playing ? 'Playing' : 'Stopped';
+
+      // Mono
+      $('mono-dot').className = 'dot ' + (s.mono ? 'on' : 'off');
+      $('mono-label').textContent = s.mono ? 'Mono' : 'Stereo';
 
       // Now playing section
       if (!s.power) {

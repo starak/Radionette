@@ -1,15 +1,16 @@
 # Radionette
 
-Internet radio controller for Raspberry Pi 3 Model B. Reads physical radio dial position via GPIO, plays internet radio streams, serves a live web status page, and acts as a Bluetooth A2DP audio sink.
+Internet radio controller for Raspberry Pi 4 Model B. Reads physical radio dial position via GPIO, plays internet radio streams, serves a live web status page, and acts as a Bluetooth A2DP audio sink.
 
 ## Architecture
 
 ### Hardware
-- **Raspberry Pi 3 Model B**
-- **10 GPIO input pins** from a physical rotary dial switch
+- **Raspberry Pi 4 Model B**
+- **11 GPIO input pins** from a physical rotary dial switch and mono switch
   - Bits 0-7 (GPIO 18, 23, 24, 25, 8, 7, 12, 16): Channel selector — 15 unique positions across two banks
   - Bit 8 (GPIO 20): Bluetooth indicator
   - Bit 9 (GPIO 21): Power indicator
+  - Bit 10 (GPIO 19): Mono switch (HIGH = mono, LOW = stereo)
 - **2 GPIO output pins** for indicator LEDs
   - GPIO 11: Power LED
   - GPIO 26: Bluetooth LED
@@ -44,8 +45,9 @@ Power ON + Bluetooth OFF
 | `src/channels.ts` | Loads `channels.json` at startup. Looks up channel number -> name + URL. |
 | `src/player.ts` | Spawns/kills `/usr/bin/mpg123` child processes. Parses ICY stream metadata. Reacts to state events. Auto-retries with escalating backoff (5s, 10s, 30s) when stream fails and desired channel is still set. |
 | `src/bluetooth.ts` | Full Bluetooth A2DP sink management — enable/disable adapter, pairing agent, device monitoring, volume boost, flap detection, auto-reconnect, notification sounds. |
-| `src/web.ts` | HTTP server (port 80) + WebSocket. Serves status page, WiFi settings page, and WiFi API endpoints. System management endpoints (WiFi reset, reboot). Pushes live state to all connected clients. |
-| `src/wifi.ts` | WiFi management via `nmcli` — scan for networks, connect (triggers playback retry on success), start/stop hotspot, hotspot detection, WiFi reset, system reboot. Falls back to mock data in dev mode. |
+| `src/audio.ts` | Mono/stereo audio mixing via PulseAudio `module-remap-sink`. Listens for `mono:on`/`mono:off` events from GPIO, loads/unloads a remap-sink that downmixes stereo L+R to mono, moves active streams on toggle. |
+| `src/web.ts` | HTTP server (port 8080) + WebSocket. Serves status page, WiFi settings page, and WiFi API endpoints. System management endpoints (WiFi reset, reboot). Pushes live state to all connected clients. |
+| `src/wifi.ts` | WiFi management via `nmcli` — scan for networks, connect (triggers playback retry on success), start/stop hotspot, hotspot detection, WiFi reset, system reboot. Write operations use `sudo nmcli`. Falls back to mock data in dev mode. |
 | `src/hotspot-alert.ts` | Periodic bleep alert when hotspot is active in radio mode. Uses `aplay` (ALSA) for early-boot compatibility before PulseAudio starts. Polls hotspot status every 5s, loops `hotspot-bleep.wav` via aplay. |
 | `src/public/index.html` | Single-file status page with inline CSS/JS. Dark theme (neutral grey palette via CSS custom properties), live WebSocket updates, tab navigation (Status / WiFi / Debug). Channel list grouped by bank with bank headers. |
 | `src/public/wifi.html` | Single-file WiFi settings page with inline CSS/JS. Same dark theme, tab navigation. Network scan list with signal bars, connect modal with password field, AP-mode warning. |
@@ -63,6 +65,7 @@ Power ON + Bluetooth OFF
 GPIO poll (10ms) -> debounce (50ms) -> state.ts EventEmitter
   |- player.ts listens        -> spawns/kills mpg123 (with auto-retry on failure)
   |- bluetooth.ts listens     -> enables/disables BT adapter
+  |- audio.ts listens         -> loads/unloads PulseAudio mono remap-sink
   |- hotspot-alert.ts listens -> bleeps when hotspot active in radio mode
   +- web.ts listens           -> broadcasts to WebSocket clients
 ```
@@ -73,6 +76,7 @@ Events emitted by state.ts:
 - `channel:change` (with channel info)
 - `player:playing` / `player:stopped`
 - `player:metadata` (ICY stream info)
+- `mono:on` / `mono:off`
 - `state:change` (full state snapshot, used by web)
 
 ### Channel Config
@@ -114,7 +118,7 @@ Uses absolute path `/usr/bin/mpg123`.
 
 The Bluetooth module (`src/bluetooth.ts`) manages:
 
-- **Adapter control:** `rfkill unblock` + `bluetoothctl power on/off`
+- **Adapter control:** `sudo rfkill unblock` + `bluetoothctl power on/off`
 - **Discoverable name:** "Radionette" (set via `bluetoothctl system-alias`)
 - **Device class:** `0x240414` (Loudspeaker) — configured in `/etc/bluetooth/main.conf`, shows speaker icon on phones
 - **Pairing agent:** `DisplayYesNo` with auto-accept — handles iPhone passkey confirmation prompts
@@ -123,9 +127,20 @@ The Bluetooth module (`src/bluetooth.ts`) manages:
 - **Auto-reconnect:** Reconnects to last stable device (connected >5s) when BT mode re-enabled
 - **Notification sounds:** `bt-connect.wav` and `bt-ready.wav` played via `paplay`
 
-All system binaries use absolute paths (`/usr/sbin/rfkill`, `/usr/bin/bluetoothctl`, `/usr/bin/pactl`, `/usr/bin/paplay`) because pm2 runs with a minimal PATH.
+All system binaries use absolute paths (`/usr/sbin/rfkill`, `/usr/bin/bluetoothctl`, `/usr/bin/pactl`, `/usr/bin/paplay`) because pm2 runs with a minimal PATH. `rfkill` is run via `sudo` because `/dev/rfkill` is not writable by the `pi` user.
 
-PulseAudio runs as the desktop user (`pi`) but the app runs as root. PulseAudio rejects connections from root even with the correct auth cookie, so `paplay` and `pactl` are run via `sudo -u pi` with explicit `PULSE_SERVER` and `PULSE_COOKIE` env vars. The username is detected from `SUDO_USER` env var (set by pm2's sudo chain), falling back to `"pi"`. On headless Pi (no desktop), PulseAudio starts via socket activation or user service when first needed.
+The app runs as the `pi` user, which owns the PulseAudio session. `paplay` and `pactl` connect natively without any `sudo` wrapper. PulseAudio starts via socket activation on headless Pi (no desktop).
+
+### Audio Details
+
+The audio module (`src/audio.ts`) provides mono/stereo switching via PulseAudio:
+
+- **Mono mixing:** Uses `module-remap-sink` to create a virtual sink (`mono_mix`) that downmixes stereo L+R into a single mono channel, routed to the hardware sink
+- **GPIO-controlled:** BCM pin 19 with pull-down resistor. HIGH = mono, LOW = stereo (default)
+- **Live switching:** When toggled, loads/unloads the remap module and moves all active sink-inputs (radio streams, BT audio, notification sounds) to the new sink
+- **Hardware sink detection:** Auto-detects the default PulseAudio hardware sink on first mono activation
+
+Uses absolute path `/usr/bin/pactl`.
 
 ### WiFi Details
 
@@ -133,14 +148,14 @@ The WiFi module (`src/wifi.ts`) provides:
 
 - **Network scanning:** `nmcli device wifi list` with deduplication and signal sorting
 - **Connecting:** `nmcli device wifi connect` — stops hotspot first if active, restarts it if connection fails. Calls `radioState.retryPlayback()` on success to resume radio playback.
-- **Hotspot:** Open AP (no password) via `nmcli connection add` — SSID `Radionette-Setup`, connection name `radionette-hotspot`. WPA-PSK is not used because the Pi 3 BCM43430 firmware has a bug where AP mode fails with `key setting validation failed`.
+- **Hotspot:** Open AP (no password) via `nmcli connection add` — SSID `Radionette-Setup`, connection name `radionette-hotspot`.
 - **Hotspot detection:** `isHotspotActive()` uses `nmcli -t device status` to check if wlan0 is connected to `radionette-hotspot` (works even without connected clients, unlike `nmcli connection show --active`)
 - **WiFi reset:** `resetWifiConfig()` deletes all saved WiFi connection profiles via `nmcli connection delete` and reboots
-- **System reboot:** `rebootSystem()` calls `/usr/sbin/reboot`
+- **System reboot:** `rebootSystem()` calls `sudo /usr/bin/systemctl reboot`
 - **Status:** Reads wlan0 device state via `nmcli device show`
 - **Dev mode:** If `nmcli` is unavailable (laptop), returns mock data
 
-Uses absolute path `/usr/bin/nmcli`. The hotspot connection profile (`radionette-hotspot`) is deleted on stop to avoid accumulating stale profiles.
+Uses absolute path `/usr/bin/nmcli`. Write operations (`connect`, `add`, `delete`, `up`, `down`) run via `sudo nmcli` since the `pi` user lacks polkit authorization for non-interactive NetworkManager writes. Read operations (`status`, `scan`, `list`, `show`) run without sudo. The hotspot connection profile (`radionette-hotspot`) is deleted on stop to avoid accumulating stale profiles.
 
 **WiFi fallback boot service:**
 - `wifi-fallback.sh` runs at boot via `wifi-fallback.service` (systemd, oneshot)
@@ -162,7 +177,7 @@ Uses absolute path `/usr/bin/nmcli`. The hotspot connection profile (`radionette
 | POST | `/api/system/wifi-reset` | Delete all saved WiFi networks and reboot |
 | POST | `/api/system/reboot` | Reboot the Pi |
 
-**Pi 3 compatibility:** The BCM43438 WiFi chip on the Pi 3 Model B supports AP mode. Both Pi 3 and Pi 4 support simultaneous AP + managed on the same channel, but the implementation uses a simpler approach: stop AP → connect → restart AP if connection fails.
+**Compatibility:** The CYW43455 WiFi chip on the Pi 4 supports AP mode with WPA, though the hotspot currently uses an open network for simplicity. Both Pi 3 and Pi 4 support simultaneous AP + managed on the same channel, but the implementation uses a simpler approach: stop AP -> connect -> restart AP if connection fails.
 
 ### Hotspot Alert Details
 
@@ -206,7 +221,7 @@ When rpio is unavailable (not on a Pi), GPIO falls back to dev mode — power de
 ## Deployment
 
 ```bash
-npm run deploy       # Builds, rsyncs to pi@radionette:~/code/, installs deps, restarts pm2
+npm run deploy       # Builds, rsyncs to pi@radionette.local:~/code/, installs deps, restarts pm2
 ```
 
 The deploy script (`deploy.sh`) does:
@@ -223,28 +238,30 @@ The deploy script (`deploy.sh`) does:
 
 ### Prerequisites
 
-- Raspberry Pi (3 Model B, 4, or compatible) with Raspberry Pi OS (desktop variant, for PulseAudio)
+- Raspberry Pi 4 Model B with Raspberry Pi OS
 - Hostname set to `radionette`
-- SSH enabled, accessible as `ssh radionette` from dev machine
-- Node.js v24.14.1 installed via nvm
+- SSH enabled, accessible as `ssh pi@radionette.local` from dev machine
+- Logged in as the `pi` user
 
 ### Automated Setup
 
-Run `setup-pi.sh` from the dev machine to install all system packages, configure Bluetooth, install pm2, and set up boot persistence:
+Run `setup-pi.sh` from the dev machine to install nvm, Node.js LTS, all system packages, configure Bluetooth, install pm2, and set up boot persistence:
 
 ```bash
-ssh radionette 'bash -s' < setup-pi.sh
+ssh pi@radionette.local 'bash -s' < setup-pi.sh
 ```
 
-The script auto-detects the username and Node.js path — works with any user, not just `pi`.
+The script requires the `pi` user and will fail otherwise. It auto-installs nvm and Node.js LTS if not already present.
 
 ### What setup-pi.sh does
 
-1. **System packages:** `mpg123`, `bluez`, `rfkill`, `pulseaudio` (+ bluetooth module), `build-essential`, `python3`
-2. **Bluetooth device class:** Sets `Class = 0x240414` in `/etc/bluetooth/main.conf` (speaker icon)
-3. **pm2:** Installs globally, configures systemd startup service
-4. **Convenience:** Adds a `pm2` alias to `~/.bashrc` (handles sudo + PATH automatically)
-5. **WiFi fallback:** Installs `wifi-fallback.service` systemd unit pointing to `~/code/wifi-fallback.sh`, enables it for boot
+1. **Pi user check:** Fails if not running as `pi`
+2. **nvm + Node.js:** Installs nvm and Node.js LTS if not already present
+3. **System packages:** `mpg123`, `bluez`, `rfkill`, `pulseaudio` (+ bluetooth module), `build-essential`, `python3`
+4. **Bluetooth device class:** Sets `Class = 0x240414` in `/etc/bluetooth/main.conf` (speaker icon)
+5. **pm2:** Installs globally, configures systemd startup service (runs as `pi` user, not root)
+6. **Environment:** Sets `XDG_RUNTIME_DIR` in pm2 service file for PulseAudio access
+7. **WiFi fallback:** Installs `wifi-fallback.service` systemd unit pointing to `~/code/wifi-fallback.sh`, enables it for boot
 
 | Package | Purpose |
 |---|---|
@@ -265,9 +282,9 @@ pm2 start ~/code/dist/index.js --name radionette --cwd ~/code
 pm2 save
 ```
 
-(The `pm2` alias handles sudo and PATH automatically.)
+(The `pm2` command is available directly via nvm — no alias needed since the app runs as the `pi` user.)
 
-pm2 creates a systemd service (`pm2-root`) that auto-starts on boot and resurrects the saved process list.
+pm2 creates a systemd service (`pm2-pi`) that auto-starts on boot and resurrects the saved process list. The service runs as the `pi` user (not root). `XDG_RUNTIME_DIR` is set in the service file so PulseAudio can find the user session socket.
 
 ### Useful pm2 Commands
 
@@ -280,7 +297,7 @@ pm2 save                  # Save process list (after changes)
 
 ### PulseAudio
 
-PulseAudio should run as the desktop user on login (default on Raspberry Pi OS with desktop). The app communicates with it using explicit socket/cookie paths detected at runtime. No extra PulseAudio configuration needed beyond installing `pulseaudio-module-bluetooth`.
+PulseAudio runs as the `pi` user. Since the app also runs as `pi`, PulseAudio commands (`paplay`, `pactl`) work natively without any wrappers. On headless Pi, PulseAudio starts via socket activation when first needed. No extra PulseAudio configuration needed beyond installing `pulseaudio-module-bluetooth`.
 
 ### Directory Structure on Pi
 
@@ -300,7 +317,7 @@ PulseAudio should run as the desktop user on login (default on Raspberry Pi OS w
 To map physical dial positions to channel numbers:
 
 ```bash
-sudo ~/.nvm/versions/node/v24.14.1/bin/node dist/gpio-logger.js
+node dist/gpio-logger.js
 ```
 
 Flip through all positions. Output shows raw value, binary, power/bt/channel fields. Ctrl+C to stop.

@@ -2,8 +2,10 @@ import { execFile } from "child_process";
 import { radioState } from "./state";
 
 // Absolute paths — pm2 runs with minimal PATH
+const SUDO = "/usr/bin/sudo";
 const NMCLI = "/usr/bin/nmcli";
 const SYSTEMCTL = "/usr/bin/systemctl";
+const WALL = "/usr/bin/wall";
 
 // Hotspot configuration
 const AP_SSID = "Radionette-Setup";
@@ -28,6 +30,7 @@ let devMode = false;
 
 /**
  * Run an nmcli command and return stdout.
+ * Used for read-only operations (status, scan, list) that don't need root.
  * Rejects on non-zero exit or timeout.
  */
 function nmcli(...args: string[]): Promise<string> {
@@ -35,6 +38,22 @@ function nmcli(...args: string[]): Promise<string> {
     execFile(NMCLI, args, { timeout: 10000 }, (err, stdout) => {
       if (err) {
         reject(new Error(`nmcli ${args.join(" ")} failed: ${err.message}`));
+      } else {
+        resolve((stdout || "").trim());
+      }
+    });
+  });
+}
+
+/**
+ * Run an nmcli command via sudo. Used for write operations (connect, add,
+ * delete, up, down) that require root privileges via polkit.
+ */
+function sudoNmcli(...args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(SUDO, [NMCLI, ...args], { timeout: 30000 }, (err, stdout) => {
+      if (err) {
+        reject(new Error(`sudo nmcli ${args.join(" ")} failed: ${err.message}`));
       } else {
         resolve((stdout || "").trim());
       }
@@ -139,7 +158,7 @@ export async function scanNetworks(): Promise<WifiNetwork[]> {
 
   try {
     // Trigger a fresh scan (ignore errors — scan may already be in progress)
-    await nmcli("device", "wifi", "rescan").catch(() => {});
+    await sudoNmcli("device", "wifi", "rescan").catch(() => {});
 
     // Small delay to let the scan complete
     await new Promise((r) => setTimeout(r, 1000));
@@ -211,9 +230,9 @@ export async function connectToNetwork(
 
     // Try to connect
     if (password) {
-      await nmcli("device", "wifi", "connect", ssid, "password", password, "ifname", "wlan0");
+      await sudoNmcli("device", "wifi", "connect", ssid, "password", password, "ifname", "wlan0");
     } else {
-      await nmcli("device", "wifi", "connect", ssid, "ifname", "wlan0");
+      await sudoNmcli("device", "wifi", "connect", ssid, "ifname", "wlan0");
     }
 
     console.log(`[WiFi] Connected to "${ssid}"`);
@@ -260,9 +279,9 @@ export async function startHotspot(): Promise<void> {
   try {
     console.log(`[WiFi] Starting hotspot "${AP_SSID}" (open)...`);
     // Delete any stale profile first
-    await nmcli("connection", "delete", AP_CON_NAME).catch(() => {});
+    await sudoNmcli("connection", "delete", AP_CON_NAME).catch(() => {});
     // Create open AP profile
-    await nmcli(
+    await sudoNmcli(
       "connection", "add",
       "type", "wifi",
       "con-name", AP_CON_NAME,
@@ -276,7 +295,7 @@ export async function startHotspot(): Promise<void> {
       "ipv4.addresses", "10.42.0.1/24"
     );
     // Activate it
-    await nmcli("connection", "up", AP_CON_NAME);
+    await sudoNmcli("connection", "up", AP_CON_NAME);
     console.log(`[WiFi] Hotspot active — SSID: ${AP_SSID} (open, no password)`);
   } catch (err: any) {
     console.error("[WiFi] Failed to start hotspot:", err.message);
@@ -292,9 +311,9 @@ export async function stopHotspot(): Promise<void> {
 
   try {
     // Bring down the hotspot connection
-    await nmcli("connection", "down", AP_CON_NAME).catch(() => {});
+    await sudoNmcli("connection", "down", AP_CON_NAME).catch(() => {});
     // Delete the connection profile to avoid stale profiles accumulating
-    await nmcli("connection", "delete", AP_CON_NAME).catch(() => {});
+    await sudoNmcli("connection", "delete", AP_CON_NAME).catch(() => {});
     console.log("[WiFi] Hotspot stopped");
   } catch (err: any) {
     console.error("[WiFi] Failed to stop hotspot:", err.message);
@@ -351,7 +370,7 @@ export async function resetWifiConfig(): Promise<{ success: boolean; deleted: st
       // Only delete wifi connections
       if (type !== "802-11-wireless") continue;
       try {
-        await nmcli("connection", "delete", name);
+        await sudoNmcli("connection", "delete", name);
         deleted.push(name);
         console.log(`[WiFi] Deleted connection profile: ${name}`);
       } catch (err: any) {
@@ -381,7 +400,10 @@ export async function rebootSystem(): Promise<{ success: boolean; error?: string
     console.log("[System] Reboot requested — rebooting in 1 second...");
     // Use a small delay so the HTTP response can be sent before the system goes down
     setTimeout(() => {
-      execFile(SYSTEMCTL, ["reboot"], (err) => {
+      execFile(SUDO, [WALL, "Radionette: rebooting now..."], (err) => {
+        if (err) console.error("[System] wall broadcast failed:", err.message);
+      });
+      execFile(SUDO, [SYSTEMCTL, "reboot"], (err) => {
         if (err) console.error("[System] Reboot failed:", err.message);
       });
     }, 1000);

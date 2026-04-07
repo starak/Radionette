@@ -3,6 +3,7 @@ import { loadChannels } from "./channels";
 import { initPlayer, stopPlayer } from "./player";
 import { initBluetooth, stopBluetooth } from "./bluetooth";
 import { initHotspotAlert, stopHotspotAlert } from "./hotspot-alert";
+import { initAudio, stopAudio } from "./audio";
 import { startGpio, stopGpio } from "./gpio";
 import { startWebServer, stopWebServer } from "./web";
 import { initWifi } from "./wifi";
@@ -24,13 +25,16 @@ initBluetooth();
 // 4. Initialize hotspot alert (bleeps when in radio mode + hotspot active)
 initHotspotAlert();
 
-// 5. Start web server (subscribes to state events)
+// 5. Initialize audio (mono/stereo switching via PulseAudio)
+initAudio();
+
+// 6. Start web server (subscribes to state events)
 startWebServer();
 
-// 6. Initialize WiFi module (dev-mode detection, API endpoints)
+// 7. Initialize WiFi module (dev-mode detection, API endpoints)
 initWifi();
 
-// 7. Start GPIO polling (drives state changes)
+// 8. Start GPIO polling (drives state changes)
 startGpio();
 
 console.log("\nRadionette is running. Press Ctrl+C to stop.\n");
@@ -40,6 +44,7 @@ async function shutdown(): Promise<void> {
   console.log("\nShutting down...");
   stopGpio();
   stopHotspotAlert();
+  stopAudio();
   await stopPlayer();
   await stopBluetooth();
   await stopWebServer();

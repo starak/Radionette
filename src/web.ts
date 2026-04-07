@@ -7,7 +7,7 @@ import { getAllChannels } from "./channels";
 import { getWifiStatus, scanNetworks, connectToNetwork, resetWifiConfig, rebootSystem } from "./wifi";
 import { injectGpioValue, resetGpioOverride } from "./gpio";
 
-const PORT = 80;
+const PORT = 8080;
 
 let wss: WebSocketServer | null = null;
 let server: http.Server | null = null;
@@ -144,9 +144,9 @@ export function startWebServer(): void {
       req.on("end", () => {
         try {
           const { value } = JSON.parse(body);
-          if (typeof value !== "number" || value < 0 || value > 1023 || !Number.isInteger(value)) {
+          if (typeof value !== "number" || value < 0 || value > 2047 || !Number.isInteger(value)) {
             res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ success: false, error: "value must be an integer 0-1023" }));
+            res.end(JSON.stringify({ success: false, error: "value must be an integer 0-2047" }));
             return;
           }
           injectGpioValue(value);
@@ -219,13 +219,7 @@ export function startWebServer(): void {
   });
 
   server.on("error", (err: NodeJS.ErrnoException) => {
-    if (err.code === "EACCES") {
-      console.error(
-        `[Web] Permission denied on port ${PORT}. Run with sudo or use authbind.`
-      );
-    } else {
-      console.error(`[Web] Server error:`, err);
-    }
+    console.error(`[Web] Server error:`, err);
   });
 }
 
