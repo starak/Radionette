@@ -45,7 +45,7 @@ Power ON + Bluetooth OFF
 | `src/channels.ts` | Loads `channels.json` at startup. Looks up channel number -> name + URL. |
 | `src/player.ts` | Spawns/kills `/usr/bin/mpg123` child processes. Parses ICY stream metadata. Reacts to state events. Auto-retries with escalating backoff (5s, 10s, 30s) when stream fails and desired channel is still set. |
 | `src/bluetooth.ts` | Full Bluetooth A2DP sink management — enable/disable adapter, pairing agent, device monitoring, volume boost, flap detection, auto-reconnect, notification sounds. |
-| `src/audio.ts` | Mono/stereo audio mixing via PulseAudio `module-remap-sink`. Listens for `mono:on`/`mono:off` events from GPIO, loads/unloads a remap-sink that downmixes stereo L+R to mono, moves active streams on toggle. |
+| `src/audio.ts` | Mono/stereo audio mixing via PulseAudio `module-remap-sink`. Creates per-sink remap-sinks for all real sinks (ALSA + BT). Spawns `pactl subscribe` to dynamically handle new BT sinks and new sink-inputs. Listens for `mono:on`/`mono:off` events from GPIO. |
 | `src/web.ts` | HTTP server (port 8080) + WebSocket. Serves status page, WiFi settings page, and WiFi API endpoints. System management endpoints (WiFi reset, reboot). Pushes live state to all connected clients. |
 | `src/wifi.ts` | WiFi management via `nmcli` — scan for networks, connect (triggers playback retry on success), start/stop hotspot, hotspot detection, WiFi reset, system reboot. Write operations use `sudo nmcli`. Falls back to mock data in dev mode. |
 | `src/hotspot-alert.ts` | Periodic bleep alert when hotspot is active in radio mode. Uses `aplay` (ALSA) for early-boot compatibility before PulseAudio starts. Polls hotspot status every 5s, loops `hotspot-bleep.wav` via aplay. |
@@ -65,7 +65,7 @@ Power ON + Bluetooth OFF
 GPIO poll (10ms) -> debounce (50ms) -> state.ts EventEmitter
   |- player.ts listens        -> spawns/kills mpg123 (with auto-retry on failure)
   |- bluetooth.ts listens     -> enables/disables BT adapter
-  |- audio.ts listens         -> loads/unloads PulseAudio mono remap-sink
+  |- audio.ts listens         -> loads/unloads per-sink PulseAudio mono remap-sinks, watches for new sinks/inputs
   |- hotspot-alert.ts listens -> bleeps when hotspot active in radio mode
   +- web.ts listens           -> broadcasts to WebSocket clients
 ```
@@ -133,12 +133,14 @@ The app runs as the `pi` user, which owns the PulseAudio session. `paplay` and `
 
 ### Audio Details
 
-The audio module (`src/audio.ts`) provides mono/stereo switching via PulseAudio:
+The audio module (`src/audio.ts`) provides mono/stereo switching via PulseAudio with dynamic per-sink remap:
 
-- **Mono mixing:** Uses `module-remap-sink` to create a virtual sink (`mono_mix`) that downmixes stereo L+R into a single mono channel, routed to the hardware sink
+- **Per-sink remap:** Creates a `module-remap-sink` for **every** real sink (ALSA hardware + any Bluetooth sinks). Each remap-sink is named `mono_mix_<realSinkName>` and downmixes stereo L+R into mono with `channels=1 channel_map=mono remix=yes`
 - **GPIO-controlled:** BCM pin 19 with pull-down resistor. HIGH = mono, LOW = stereo (default)
-- **Live switching:** When toggled, loads/unloads the remap module and moves all active sink-inputs (radio streams, BT audio, notification sounds) to the new sink
-- **Hardware sink detection:** Auto-detects the default PulseAudio hardware sink on first mono activation
+- **Dynamic BT sink handling:** Spawns `pactl subscribe` to watch PulseAudio events. When a new sink appears (e.g. Bluetooth device connects while mono is active), automatically creates a remap-sink for it and moves its streams
+- **Auto sink-input routing:** The subscribe watcher also detects new sink-inputs (e.g. mpg123 starts, BT audio arrives) and moves them to the corresponding mono remap-sink
+- **Live switching:** On `mono:on`, creates remap-sinks for all current sinks, sets the mono version of the default sink as the new default, and moves all active streams. On `mono:off`, moves streams back to real sinks, unloads all remap modules, restores the original default sink, and kills the subscribe watcher
+- **Cleanup on sink removal:** When a master sink is removed (BT disconnect), PulseAudio auto-unloads its remap module; the module map is cleaned up on next `disableMono()`
 
 Uses absolute path `/usr/bin/pactl`.
 
