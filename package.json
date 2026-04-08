@@ -8,7 +8,7 @@
     "deploy": "./deploy.sh",
     "dev": "tsc --watch",
     "gpio-logger": "node dist/gpio-logger.js",
-    "setup-pi": "ssh radionette 'bash -s' < setup-pi.sh"
+    "setup-pi": "ssh pi@radionette.local 'bash -s' < setup-pi.sh"
   },
   "license": "MIT",
   "dependencies": {

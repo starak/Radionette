@@ -22,23 +22,48 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 
 ### GPIO Pin Assignments
 
-| Pin (BCM) | Direction | Function |
-|---|---|---|
-| 18 | Input | Channel bit 0 |
-| 23 | Input | Channel bit 1 |
-| 24 | Input | Channel bit 2 |
-| 25 | Input | Channel bit 3 |
-| 8 | Input | Channel bit 4 |
-| 7 | Input | Channel bit 5 |
-| 12 | Input | Channel bit 6 |
-| 16 | Input | Channel bit 7 |
-| 20 | Input | Bluetooth mode |
-| 21 | Input | Power indicator |
-| 19 | Input | Mono audio (HIGH = mono, LOW = stereo) |
-| 11 | Output | Power LED |
-| 26 | Output | Bluetooth LED |
-
 All input pins use internal pull-down resistors.
+
+```
+                  +---]+---+
+             3V3 =|  1   2 |= 5V
+     (SDA)  GP02 =|  3   4 |= 5V
+     (SCL)  GP03 =|  5   6 |= GND
+            GP04 =|  7   8 |= GP14 (TXD)
+             GND =|  9  10 |= GP15 (RXD)
+ [PWR LED]  GP17 =| 11  12 |= GP18 [CH BIT 0]
+            GP27 =| 13  14 |= GND
+            GP22 =| 15  16 |= GP23 [CH BIT 1]
+             3V3 =| 17  18 |= GP24 [CH BIT 2]
+    (MOSI)  GP10 =| 19  20 |= GND
+    (MISO)  GP09 =| 21  22 |= GP25 [CH BIT 3]
+    (SCLK)  GP11 =| 23  24 |= GP08 [CH BIT 4]
+             GND =| 25  26 |= GP07 [CH BIT 5]
+            GP00 =| 27  28 |= GP01
+            GP05 =| 29  30 |= GND
+            GP06 =| 31  32 |= GP12 [CH BIT 6]
+            GP13 =| 33  34 |= GND
+    [MONO]  GP19 =| 35  36 |= GP16 [CH BIT 7]
+  [BT LED]  GP26 =| 37  38 |= GP20 [BLUETOOTH]
+             GND =| 39  40 |= GP21 [POWER]
+                  +--------+
+```
+
+| BCM | Phys | Dir | Function |
+|-----|------|-----|----------|
+| 18 | 12 | In | Channel bit 0 |
+| 23 | 16 | In | Channel bit 1 |
+| 24 | 18 | In | Channel bit 2 |
+| 25 | 22 | In | Channel bit 3 |
+| 8 | 24 | In | Channel bit 4 |
+| 7 | 26 | In | Channel bit 5 |
+| 12 | 32 | In | Channel bit 6 |
+| 16 | 36 | In | Channel bit 7 |
+| 20 | 38 | In | Bluetooth mode |
+| 21 | 40 | In | Power indicator |
+| 19 | 35 | In | Mono audio (HIGH = mono, LOW = stereo) |
+| 17 | 11 | Out | Power LED |
+| 26 | 37 | Out | Bluetooth LED |
 
 ## Raspberry Pi Setup
 
@@ -49,17 +74,7 @@ All input pins use internal pull-down resistors.
 3. Enable SSH
 4. Ensure the Pi is reachable as `ssh pi@radionette.local` from your dev machine (via mDNS)
 
-### 2. Automated Setup
-
-The `setup-pi.sh` script handles everything: nvm, Node.js LTS, system packages, Bluetooth configuration, pm2 installation, and boot persistence. Run it from your dev machine:
-
-```bash
-ssh pi@radionette.local 'bash -s' < setup-pi.sh
-```
-
-This installs nvm and Node.js LTS, then installs `mpg123`, `bluez`, `rfkill`, `pulseaudio` (+ Bluetooth module), `build-essential`, and `python3`. It configures the Bluetooth device class for the speaker icon, installs pm2, sets up auto-start on boot, and installs the wifi-fallback systemd service.
-
-### 3. First Deploy
+### 2. Clone & Install
 
 From your dev machine (requires Node.js and npm locally):
 
@@ -67,19 +82,27 @@ From your dev machine (requires Node.js and npm locally):
 git clone <this-repo>
 cd radionette
 npm install
+```
+
+### 3. Automated Pi Setup
+
+The `setup-pi.sh` script handles everything: nvm, Node.js LTS, system packages, Bluetooth configuration, pm2 installation, and boot persistence. Run it from your dev machine:
+
+```bash
+npm run setup-pi
+```
+
+This installs nvm and Node.js LTS, then installs `mpg123`, `bluez`, `rfkill`, `pulseaudio` (+ Bluetooth module), `build-essential`, and `python3`. It configures the Bluetooth device class for the speaker icon, installs pm2, sets up auto-start on boot, and installs the wifi-fallback systemd service.
+
+### 4. First Deploy
+
+```bash
 npm run deploy
 ```
 
-This builds the TypeScript, syncs everything to the Pi, installs production dependencies, and restarts the app. The deploy script auto-detects the remote Node.js path.
+This builds the TypeScript, syncs everything to the Pi, installs production dependencies, starts the app via pm2, and saves the process list. The deploy script auto-detects the remote Node.js path.
 
-Then on the Pi, start the app for the first time:
-
-```bash
-pm2 start ~/code/dist/index.js --name radionette --cwd ~/code
-pm2 save
-```
-
-### 4. Verify
+### 5. Verify
 
 - Open `http://radionette.local:8080/` in a browser — you should see the status page
 - Turn the dial — the station should change and audio should play

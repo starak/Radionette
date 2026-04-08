@@ -379,6 +379,11 @@ export async function resetWifiConfig(): Promise<{ success: boolean; deleted: st
     }
 
     console.log(`[WiFi] Reset complete — deleted ${deleted.length} profile(s)`);
+
+    // Reboot so the wifi-fallback service starts the hotspot
+    console.log("[WiFi] Rebooting...");
+    rebootSystem().catch((err) => console.error("[WiFi] Reboot failed:", err.message));
+
     return { success: true, deleted };
   } catch (err: any) {
     console.error("[WiFi] Failed to reset config:", err.message);

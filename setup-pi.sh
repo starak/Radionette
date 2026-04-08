@@ -109,46 +109,58 @@ ok "~/code exists"
 
 # ---------- 4. Install pm2 ----------
 
-info "Installing pm2 globally..."
-sudo env "PATH=${NODE_BIN}:$PATH" npm install -g pm2
-ok "pm2 installed"
+info "Installing pm2..."
+# Install as the pi user (not with sudo) — running pm2 as root tries to
+# create /root/.pm2 which fails on some Pi OS images with I/O errors.
+npm install -g pm2
+ok "pm2 installed at ${NODE_BIN}/pm2"
 
 # ---------- 5. pm2 startup service ----------
 
-info "Configuring pm2 startup on boot..."
-# Run pm2 as the current user (not root). pm2 startup generates a systemd
-# service that auto-starts pm2 on boot under this user account.
-# Capture the sudo command rather than piping into bash — piping into bash
-# would consume stdin and eat the rest of this script when run via
-# ssh 'bash -s' < setup-pi.sh.
-PM2_STARTUP_CMD=$(env "PATH=${NODE_BIN}:$PATH" pm2 startup systemd -u "${CURRENT_USER}" --hp "${HOME}" | grep "sudo")
-if [ -n "${PM2_STARTUP_CMD}" ]; then
-  eval "${PM2_STARTUP_CMD}"
-fi
-ok "pm2 startup service configured for user ${CURRENT_USER}"
+info "Installing pm2 systemd service..."
 
-# ---------- 6. Environment for pm2 ----------
-
-info "Setting up XDG_RUNTIME_DIR for pm2 service..."
-# pm2's systemd service needs XDG_RUNTIME_DIR so PulseAudio can find the socket.
-# The startup command above creates a service file — we need to add the env var.
+# Write the service file directly instead of using 'pm2 startup'.
+# 'pm2 startup systemd' runs pm2 as root during generation, which crashes
+# on fresh Pi OS because it can't create /root/.pm2 (EIO errors).
+# We know exactly what the service needs, so write it ourselves.
 PM2_SERVICE="pm2-${CURRENT_USER}.service"
 PM2_SERVICE_FILE="/etc/systemd/system/${PM2_SERVICE}"
-if [ -f "${PM2_SERVICE_FILE}" ]; then
-  # Add XDG_RUNTIME_DIR if not already present
-  if ! grep -q "XDG_RUNTIME_DIR" "${PM2_SERVICE_FILE}"; then
-    sudo sed -i "/^\[Service\]/a Environment=XDG_RUNTIME_DIR=/run/user/$(id -u)" "${PM2_SERVICE_FILE}"
-    sudo systemctl daemon-reload
-    ok "Added XDG_RUNTIME_DIR to ${PM2_SERVICE}"
-  else
-    ok "XDG_RUNTIME_DIR already set in ${PM2_SERVICE}"
-  fi
-else
-  warn "Could not find ${PM2_SERVICE_FILE} — you may need to set XDG_RUNTIME_DIR manually"
-fi
 
-# Enable user lingering so /run/user/<uid> is created at boot (before login).
-# Without this, PulseAudio socket activation fails because the runtime dir
+sudo tee "${PM2_SERVICE_FILE}" > /dev/null <<EOF
+[Unit]
+Description=PM2 process manager for ${CURRENT_USER}
+Documentation=https://pm2.keymetrics.io/
+After=network.target
+
+[Service]
+Type=forking
+User=${CURRENT_USER}
+LimitNOFILE=infinity
+LimitNPROC=infinity
+LimitCORE=infinity
+Environment=PATH=${NODE_BIN}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PM2_HOME=${HOME}/.pm2
+Environment=XDG_RUNTIME_DIR=/run/user/$(id -u)
+PIDFile=${HOME}/.pm2/pm2.pid
+Restart=on-failure
+
+ExecStart=${NODE_BIN}/pm2 resurrect
+ExecReload=${NODE_BIN}/pm2 reload all
+ExecStop=${NODE_BIN}/pm2 kill
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable "${PM2_SERVICE}"
+ok "${PM2_SERVICE} installed and enabled"
+
+# ---------- 6. Enable user linger ----------
+
+info "Enabling user linger for ${CURRENT_USER}..."
+# User lingering ensures /run/user/<uid> is created at boot (before login).
+# Without this, PulseAudio socket activation fails because XDG_RUNTIME_DIR
 # doesn't exist yet when pm2 starts.
 sudo loginctl enable-linger "${CURRENT_USER}"
 ok "User linger enabled for ${CURRENT_USER}"
@@ -192,8 +204,5 @@ info "Setup complete!"
 echo ""
 echo "  Next steps:"
 echo "  1. From your dev machine, run: npm run deploy"
-echo "  2. Then on the Pi, start the app for the first time:"
-echo "     pm2 start ~/code/dist/index.js --name radionette --cwd ~/code"
-echo "     pm2 save"
-echo "  3. Open http://radionette.local:8080/ in a browser to verify"
+echo "  2. Open http://radionette.local:8080/ in a browser to verify"
 echo ""
