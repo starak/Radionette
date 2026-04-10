@@ -69,6 +69,7 @@ sudo apt-get install -y -qq \
   pulseaudio \
   pulseaudio-utils \
   pulseaudio-module-bluetooth \
+  i2c-tools \
   build-essential \
   python3
 ok "System packages installed"

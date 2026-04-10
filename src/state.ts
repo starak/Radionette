@@ -17,6 +17,7 @@ export interface RadioState {
   playing: boolean;
   metadata: string | null;
   mono: boolean;
+  volume: number;
   rawGpio: number;
 }
 
@@ -31,6 +32,7 @@ export interface RadioEvents {
   "player:metadata": [metadata: string];
   "mono:on": [];
   "mono:off": [];
+  "volume:change": [volume: number];
   "state:change": [state: RadioState];
 }
 
@@ -44,6 +46,7 @@ class RadioStateEmitter extends EventEmitter {
     playing: false,
     metadata: null,
     mono: false,
+    volume: 100,
     rawGpio: 0,
   };
 
@@ -145,6 +148,14 @@ class RadioStateEmitter extends EventEmitter {
     } else {
       this.emit("mono:off");
     }
+    this.emitStateChange();
+  }
+
+  setVolume(percent: number): void {
+    const clamped = Math.max(0, Math.min(100, percent));
+    if (this._state.volume === clamped) return;
+    this._state.volume = clamped;
+    this.emit("volume:change", clamped);
     this.emitStateChange();
   }
 

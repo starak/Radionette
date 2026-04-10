@@ -15,6 +15,7 @@ Internet radio controller for Raspberry Pi 4 Model B. Reads physical radio dial 
   - GPIO 11: Power LED
   - GPIO 26: Bluetooth LED
 - Audio output via 3.5mm jack or HDMI
+- **ADS1115 16-bit ADC** on I2C bus 1 (address 0x48) — reads volume potentiometer on channel A0
 
 ### State Machine
 
@@ -46,6 +47,7 @@ Power ON + Bluetooth OFF
 | `src/player.ts` | Spawns/kills `/usr/bin/mpg123` child processes. Parses ICY stream metadata. Reacts to state events. Auto-retries with escalating backoff (5s, 10s, 30s) when stream fails and desired channel is still set. |
 | `src/bluetooth.ts` | Full Bluetooth A2DP sink management — enable/disable adapter, pairing agent, device monitoring, volume boost, flap detection, auto-reconnect, notification sounds. |
 | `src/audio.ts` | Mono/stereo audio mixing via PulseAudio `module-remap-sink`. Creates per-sink remap-sinks for all real sinks (ALSA + BT). Spawns `pactl subscribe` to dynamically handle new BT sinks and new sink-inputs. Listens for `mono:on`/`mono:off` events from GPIO. |
+| `src/volume.ts` | Volume control via I2C ADS1115 ADC. Polls potentiometer every 100ms, applies 10-sample rolling average for smoothing, sets PulseAudio master volume on all sinks via `pactl set-sink-volume`. Re-applies volume on mode changes (BT connect/disconnect). Falls back to dev mode when `ioctl` module or `/dev/i2c-1` is unavailable. |
 | `src/web.ts` | HTTP server (port 8080) + WebSocket. Serves status page, WiFi settings page, and WiFi API endpoints. System management endpoints (WiFi reset, reboot). Pushes live state to all connected clients. |
 | `src/wifi.ts` | WiFi management via `nmcli` — scan for networks, connect (triggers playback retry on success), start/stop hotspot, hotspot detection, WiFi reset, system reboot. Write operations use `sudo nmcli`. Falls back to mock data in dev mode. |
 | `src/hotspot-alert.ts` | Periodic bleep alert when hotspot is active in radio mode. Uses `aplay` (ALSA) for early-boot compatibility before PulseAudio starts. Polls hotspot status every 5s, loops `hotspot-bleep.wav` via aplay. |
@@ -143,6 +145,24 @@ The audio module (`src/audio.ts`) provides mono/stereo switching via PulseAudio 
 - **Cleanup on sink removal:** When a master sink is removed (BT disconnect), PulseAudio auto-unloads its remap module; the module map is cleaned up on next `disableMono()`
 
 Uses absolute path `/usr/bin/pactl`.
+
+### Volume Details
+
+The volume module (`src/volume.ts`) reads a potentiometer via an ADS1115 16-bit ADC over I2C and controls PulseAudio master volume:
+
+- **Hardware:** ADS1115 on I2C bus 1 (`/dev/i2c-1`), address `0x48`, channel A0 (single-ended vs GND)
+- **I2C access:** Uses raw file I/O on `/dev/i2c-1` with the `ioctl` npm module to set the slave address (native addon, like `rpio`)
+- **ADC config:** Continuous mode, PGA +/-4.096V (FS), 128 SPS. Writes config register once at init, then reads conversion register every poll
+- **Pot calibration:** Raw range 0-14300 (pot only outputs ~0-1.8V). Wiring is inverted (high=off), corrected in software
+- **Smoothing:** 10-sample rolling average to tame noisy 70-year-old pot. Buffer pre-seeded at init to avoid ramp-up
+- **Volume control:** Sets PulseAudio volume on ALL sinks via `pactl set-sink-volume` when smoothed percent changes by >= 1%. Linear curve
+- **New sinks:** Re-applies volume on `mode:bluetooth` / `mode:radio` state events (covers BT connect/disconnect)
+- **State integration:** Calls `radioState.setVolume()` which emits `volume:change` + `state:change` (broadcast to web UI)
+- **Log debouncing:** Raw ADC and volume-set logs throttled to max 1/sec to reduce log spam
+- **Polling:** Reads ADC every 100ms
+- **Dev mode:** Falls back silently when `ioctl` module is unavailable (dev machine) or `/dev/i2c-1` doesn't exist
+
+Requires I2C enabled on the Pi (`sudo raspi-config` -> Interface Options -> I2C -> Enable).
 
 ### WiFi Details
 
@@ -273,7 +293,8 @@ The script requires the `pi` user and will fail otherwise. It auto-installs nvm 
 | `pulseaudio` | Audio routing |
 | `pulseaudio-utils` | `pactl` (volume control) and `paplay` (sound playback) |
 | `pulseaudio-module-bluetooth` | A2DP sink support for PulseAudio |
-| `build-essential`, `python3` | Required to compile `rpio` native addon |
+| `build-essential`, `python3` | Required to compile `rpio` and `ioctl` native addons |
+| `i2c-tools` | `i2cdetect` for debugging ADS1115 ADC connection |
 
 ### pm2 Process Manager
 
@@ -318,4 +339,4 @@ node dist/gpio-logger.js
 Flip through all positions. Output shows raw value, binary, power/bt/channel fields. Ctrl+C to stop.
 
 ## Not Yet Implemented
-- Volume control (waiting for ADC hardware)
+- (none currently)

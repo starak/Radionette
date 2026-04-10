@@ -7,6 +7,7 @@ import { initAudio, stopAudio } from "./audio";
 import { startGpio, stopGpio } from "./gpio";
 import { startWebServer, stopWebServer } from "./web";
 import { initWifi } from "./wifi";
+import { initVolume, stopVolume } from "./volume";
 
 consolestamp(console, { format: ":date(yyyy-mm-dd HH:MM:ss.l)" });
 
@@ -37,11 +38,15 @@ initWifi();
 // 8. Start GPIO polling (drives state changes)
 startGpio();
 
-console.log("\nRadionette is running. Press Ctrl+C to stop.\n");
+// 9. Initialize volume ADC (I2C ADS1115 → PulseAudio master volume)
+initVolume();
+
+console.log("\nRadionette is running.\n");
 
 // Graceful shutdown
 async function shutdown(): Promise<void> {
   console.log("\nShutting down...");
+  stopVolume();
   stopGpio();
   stopHotspotAlert();
   stopAudio();
