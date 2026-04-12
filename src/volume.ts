@@ -45,6 +45,9 @@ const LOG_DEBOUNCE_MS = 1000;
 // Absolute paths — pm2 runs with minimal PATH
 const PACTL = "/usr/bin/pactl";
 
+// Mono remap-sink prefix (must match audio.ts)
+const MONO_PREFIX = "mono_mix_";
+
 // ── Module state ───────────────────────────────────────────────────────
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -217,7 +220,7 @@ function pactl(...args: string[]): Promise<string | null> {
 }
 
 /**
- * List all sink names (short format).
+ * List all real sink names (excludes mono remap-sinks from audio.ts).
  */
 async function listAllSinks(): Promise<string[]> {
   const output = await pactl("list", "short", "sinks");
@@ -226,7 +229,7 @@ async function listAllSinks(): Promise<string[]> {
     .split("\n")
     .filter((l) => l.trim())
     .map((line) => line.split("\t")[1])
-    .filter((name): name is string => !!name);
+    .filter((name): name is string => !!name && !name.startsWith(MONO_PREFIX));
 }
 
 /**
