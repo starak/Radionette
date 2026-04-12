@@ -5,7 +5,11 @@ import { radioState } from "./state";
 // ── ADS1115 I2C configuration ──────────────────────────────────────────
 
 const I2C_BUS = "/dev/i2c-1";
-const ADS1115_ADDR = 0x48;
+
+// ADS1115 has 4 possible addresses depending on ADDR pin wiring:
+//   0x48 = ADDR→GND, 0x49 = ADDR→VDD, 0x4a = ADDR→SDA, 0x4b = ADDR→SCL
+// We scan all four to handle marginal ADDR connections.
+const ADS1115_ADDRS = [0x48, 0x49, 0x4a, 0x4b];
 
 // ADS1115 registers
 const REG_CONVERSION = 0x00;
@@ -79,78 +83,70 @@ try {
 // ── I2C helpers ────────────────────────────────────────────────────────
 
 /**
- * Open the I2C bus and set the slave address.
- * Returns true if successful.
+ * Open the I2C bus and scan for the ADS1115 at all 4 possible addresses.
+ * Tries to write+verify the config register at each address.
+ * Returns the detected address, or null if not found.
  */
-function openI2C(): boolean {
+function openAndDetectADC(): number | null {
+  if (!ioctl) {
+    console.warn("[Volume] ioctl module not available");
+    return null;
+  }
+
   try {
     i2cFd = openSync(I2C_BUS, "r+");
-    if (!ioctl) {
-      throw new Error("ioctl module not available");
-    }
-    ioctl(i2cFd, I2C_SLAVE, ADS1115_ADDR);
-    return true;
   } catch (err: any) {
-    console.warn(`[Volume] Cannot open I2C: ${err.message}`);
-    if (i2cFd !== null) {
-      try {
-        closeSync(i2cFd);
-      } catch {}
-      i2cFd = null;
-    }
-    return false;
+    console.warn(`[Volume] Cannot open I2C bus: ${err.message}`);
+    return null;
   }
-}
 
-/**
- * Configure the ADS1115 for continuous single-ended A0 readings.
- * Must be called once after opening I2C.
- * Returns true if the config was written and verified.
- */
-function configureADC(): boolean {
-  if (i2cFd === null) return false;
+  for (const addr of ADS1115_ADDRS) {
+    try {
+      ioctl!(i2cFd, I2C_SLAVE, addr);
 
+      // Try writing config register
+      const configBuf = Buffer.from([
+        REG_CONFIG,
+        (CONFIG_A0_CONTINUOUS >> 8) & 0xff,
+        CONFIG_A0_CONTINUOUS & 0xff,
+      ]);
+      writeSync(i2cFd, configBuf);
+
+      // Verify config was written correctly
+      const regBuf = Buffer.from([REG_CONFIG]);
+      writeSync(i2cFd, regBuf);
+      const readBuf = Buffer.alloc(2);
+      readSync(i2cFd, readBuf, 0, 2, null);
+      const readBack = (readBuf[0] << 8) | readBuf[1];
+
+      // OS bit (15) clears after conversion starts, so mask it
+      const expected = CONFIG_A0_CONTINUOUS & 0x7fff;
+      const actual = readBack & 0x7fff;
+      if (actual !== expected) continue;
+
+      // Point to conversion register for fast reads
+      const convBuf = Buffer.from([REG_CONVERSION]);
+      writeSync(i2cFd, convBuf);
+
+      console.log(`[Volume] ADS1115 found at 0x${addr.toString(16)}`);
+      return addr;
+    } catch {
+      // This address didn't respond, try next
+    }
+  }
+
+  // No address worked
   try {
-    // Write config register: register pointer + 2 data bytes
-    const configBuf = Buffer.from([
-      REG_CONFIG,
-      (CONFIG_A0_CONTINUOUS >> 8) & 0xff,
-      CONFIG_A0_CONTINUOUS & 0xff,
-    ]);
-    writeSync(i2cFd, configBuf);
-
-    // Verify config was written correctly
-    const regBuf = Buffer.from([REG_CONFIG]);
-    writeSync(i2cFd, regBuf);
-    const readBuf = Buffer.alloc(2);
-    readSync(i2cFd, readBuf, 0, 2, null);
-    const readBack = (readBuf[0] << 8) | readBuf[1];
-
-    // OS bit (15) clears after conversion starts, so mask it for comparison
-    const expected = CONFIG_A0_CONTINUOUS & 0x7fff;
-    const actual = readBack & 0x7fff;
-    if (actual !== expected) {
-      console.warn(
-        `[Volume] Config verify failed: wrote 0x${expected.toString(16)}, read 0x${actual.toString(16)}`
-      );
-      return false;
-    }
-
-    // Point back to conversion register for fast reads
-    const convBuf = Buffer.from([REG_CONVERSION]);
-    writeSync(i2cFd, convBuf);
-
-    return true;
-  } catch (err: any) {
-    console.error(`[Volume] Config write failed: ${err.message}`);
-    return false;
-  }
+    closeSync(i2cFd);
+  } catch {}
+  i2cFd = null;
+  return null;
 }
 
 /**
  * Read the current conversion value from the ADS1115.
  *
- * After configureADC(), the chip runs continuous conversions on A0
+ * After openAndDetectADC(), the chip runs continuous conversions on A0
  * (single-ended vs GND) at 128 SPS. We just read the conversion register.
  *
  * Returns the raw 16-bit signed value, or null on error.
@@ -204,6 +200,16 @@ function smoothedPercent(raw: number): number {
 // ── PulseAudio volume control ──────────────────────────────────────────
 
 /**
+ * Apply quadratic volume curve: knob percent → PulseAudio percent.
+ * Human hearing is logarithmic, so a linear knob feels "too loud too fast".
+ * Quadratic (x^2) spends more of the knob rotation in the quiet range:
+ *   knob 25% → PA 6%, knob 50% → PA 25%, knob 75% → PA 56%, knob 100% → PA 100%
+ */
+function applyCurve(knobPercent: number): number {
+  return Math.round((knobPercent * knobPercent) / 100);
+}
+
+/**
  * Run a pactl command. Returns stdout on success, null on error.
  */
 function pactl(...args: string[]): Promise<string | null> {
@@ -234,11 +240,13 @@ async function listAllSinks(): Promise<string[]> {
 
 /**
  * Set volume on ALL current PulseAudio sinks.
- * Linear curve: percentage maps directly to PulseAudio percent.
+ * Applies quadratic curve: knob percent is perceptually linear,
+ * PulseAudio gets the shaped value.
  */
-async function setAllSinksVolume(percent: number): Promise<void> {
+async function setAllSinksVolume(knobPercent: number): Promise<void> {
+  const paPercent = applyCurve(knobPercent);
   const sinks = await listAllSinks();
-  const volArg = `${percent}%`;
+  const volArg = `${paPercent}%`;
   for (const sink of sinks) {
     await pactl("set-sink-volume", sink, volArg);
   }
@@ -309,13 +317,13 @@ function pollADC(): void {
   ) {
     // Debounce the "Setting volume" log too
     if (now - lastLogTime >= LOG_DEBOUNCE_MS) {
-      console.log(`[Volume] Setting volume to ${percent}%`);
+      console.log(`[Volume] Setting volume to ${applyCurve(percent)}% (knob ${percent}%)`);
       lastLogTime = now;
     }
     lastAppliedPercent = percent;
 
-    // Update state (broadcasts to web UI via state:change)
-    radioState.setVolume(percent);
+    // Update state with the real PA volume (broadcasts to web UI)
+    radioState.setVolume(applyCurve(percent));
 
     // Set PulseAudio volume on all sinks
     setAllSinksVolume(percent).catch((err) =>
@@ -333,15 +341,10 @@ export function initVolume(): void {
     return;
   }
 
-  if (!openI2C()) {
-    devMode = true;
-    console.log("[Volume] Dev mode — I2C not available");
-    return;
-  }
-
-  // Configure for single-ended A0 continuous conversion
-  if (!configureADC()) {
-    console.warn("[Volume] ADS1115 not responding on I2C bus 1 at 0x48");
+  // Scan all 4 possible ADS1115 addresses, configure whichever responds
+  const addr = openAndDetectADC();
+  if (addr === null) {
+    console.warn("[Volume] ADS1115 not found on I2C bus 1 (scanned 0x48-0x4b)");
     devMode = true;
     return;
   }
@@ -367,7 +370,7 @@ export function initVolume(): void {
   );
 
   // Set initial volume in state and PulseAudio
-  radioState.setVolume(percent);
+  radioState.setVolume(applyCurve(percent));
   setAllSinksVolume(percent).catch((err) =>
     console.warn(`[Volume] Failed to set initial volume: ${err}`)
   );

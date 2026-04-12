@@ -365,6 +365,38 @@
       margin-top: 0.4rem;
       font-style: italic;
     }
+
+    /* Volume bar */
+    .volume-row {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+    }
+
+    .volume-bar-track {
+      flex: 1;
+      height: 12px;
+      background: var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .volume-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 6px;
+      transition: width 0.15s;
+      width: 0%;
+    }
+
+    .volume-pct {
+      font-family: monospace;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text);
+      min-width: 3.2rem;
+      text-align: right;
+    }
   </style>
 </head>
 <body>
@@ -424,6 +456,17 @@
       <tr><td class="key">name</td><td class="val" id="ch-name">---</td></tr>
       <tr><td class="key">url</td><td class="val" id="ch-url">---</td></tr>
     </table>
+  </div>
+
+  <!-- Volume -->
+  <div class="card">
+    <h2>Volume</h2>
+    <div class="volume-row">
+      <div class="volume-bar-track">
+        <div class="volume-bar-fill" id="vol-bar"></div>
+      </div>
+      <span class="volume-pct" id="vol-pct">---%</span>
+    </div>
   </div>
 
   <!-- Virtual dial controls -->
@@ -613,9 +656,14 @@
         $('ch-url').textContent = '—';
       }
 
+      // Volume bar
+      const vol = s.volume != null ? s.volume : 0;
+      $('vol-bar').style.width = vol + '%';
+      $('vol-pct').textContent = vol + '%';
+
       // Full state table
       const stateTable = $('state-table');
-      const stateKeys = ['power', 'mode', 'playing', 'bluetooth', 'bluetoothDevice', 'mono', 'metadata', 'rawGpio'];
+      const stateKeys = ['power', 'mode', 'playing', 'bluetooth', 'bluetoothDevice', 'mono', 'volume', 'metadata', 'rawGpio'];
       let rows = '';
       stateKeys.forEach(k => {
         const v = s[k];
