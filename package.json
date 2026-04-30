@@ -8,14 +8,21 @@
     "deploy": "./deploy.sh",
     "dev": "tsc --watch",
     "gpio-logger": "node dist/gpio-logger.js",
+    "smoke-display": "node dist/scripts/display-smoke.js",
+    "render-test": "node dist/scripts/display-render-test.js",
     "setup-pi": "ssh pi@radionette.local 'bash -s' < setup-pi.sh"
   },
   "license": "MIT",
   "dependencies": {
     "console-stamp": "^3.1.2",
+    "gifuct-js": "^2.1.2",
     "ioctl": "^2.0.2",
     "rpio": "^2.4.2",
+    "spi-device": "^3.1.2",
     "ws": "^8.20.0"
+  },
+  "optionalDependencies": {
+    "canvas": "^2.11.2"
   },
   "devDependencies": {
     "@types/console-stamp": "^0.2.33",

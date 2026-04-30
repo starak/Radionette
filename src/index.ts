@@ -8,6 +8,14 @@ import { startGpio, stopGpio } from "./gpio";
 import { startWebServer, stopWebServer } from "./web";
 import { initWifi } from "./wifi";
 import { initVolume, stopVolume } from "./volume";
+import {
+  initDisplayService,
+  stopDisplayService,
+  defaultLogoDir,
+} from "./display-service";
+
+const DISPLAY_DC_PIN = 27;
+const DISPLAY_RESET_PIN = 22;
 
 consolestamp(console, { format: ":date(yyyy-mm-dd HH:MM:ss.l)" });
 
@@ -41,11 +49,29 @@ startGpio();
 // 9. Initialize volume ADC (I2C ADS1115 → PulseAudio master volume)
 initVolume();
 
+// 10. Initialize display service. Done last so all state-emitting modules are
+//     already wired; the service immediately paints the current state.
+//     Any failure here must NOT take down the rest of the radio.
+initDisplayService({
+  dcPin: DISPLAY_DC_PIN,
+  resetPin: DISPLAY_RESET_PIN,
+  logoDir: defaultLogoDir(),
+}).catch((err) => {
+  console.error("[Display] init failed (continuing without display):", err);
+});
+
 console.log("\nRadionette is running.\n");
 
 // Graceful shutdown
 async function shutdown(): Promise<void> {
   console.log("\nShutting down...");
+  // Stop the display first so PIN_PRESERVE leaves the last logo on the panel
+  // before any other module tears down GPIO/SPI underneath us.
+  try {
+    await stopDisplayService();
+  } catch (err) {
+    console.error("[Display] shutdown error:", err);
+  }
   stopVolume();
   stopGpio();
   stopHotspotAlert();

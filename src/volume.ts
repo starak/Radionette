@@ -37,8 +37,8 @@ const POLL_INTERVAL_MS = 100;
 const SMOOTH_WINDOW = 10;
 
 // Only update PulseAudio when smoothed percentage changes by at least this much.
-// Prevents constant pactl calls from 1% jitter.
-const CHANGE_THRESHOLD = 1;
+// Prevents constant pactl calls from ADC jitter at percentage boundaries.
+const CHANGE_THRESHOLD = 2;
 
 // Only log when raw value changes by this much (reduces log spam from noise)
 const LOG_THRESHOLD = 200;

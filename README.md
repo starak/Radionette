@@ -18,6 +18,8 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 - Rotary dial switch wired to 10 GPIO input pins
 - Mono/stereo switch on 1 GPIO input pin
 - 2 LEDs (power + Bluetooth indicator)
+- GC9A01 1.28" 240x240 round IPS display on SPI0
+- ADS1115 16-bit ADC on I2C bus 1 for the volume potentiometer
 - Audio output via 3.5mm jack or HDMI
 
 ### GPIO Pin Assignments
@@ -25,28 +27,28 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 All input pins use internal pull-down resistors.
 
 ```
-                  +---]+---+
-             3V3 =|  1   2 |= 5V
-     (SDA)  GP02 =|  3   4 |= 5V
-     (SCL)  GP03 =|  5   6 |= GND
-            GP04 =|  7   8 |= GP14 (TXD)
-             GND =|  9  10 |= GP15 (RXD)
- [PWR LED]  GP17 =| 11  12 |= GP18 [CH BIT 0]
-            GP27 =| 13  14 |= GND
-            GP22 =| 15  16 |= GP23 [CH BIT 1]
-             3V3 =| 17  18 |= GP24 [CH BIT 2]
-    (MOSI)  GP10 =| 19  20 |= GND
-    (MISO)  GP09 =| 21  22 |= GP25 [CH BIT 3]
-    (SCLK)  GP11 =| 23  24 |= GP08 [CH BIT 4]
-             GND =| 25  26 |= GP07 [CH BIT 5]
-            GP00 =| 27  28 |= GP01
-            GP05 =| 29  30 |= GND
-            GP06 =| 31  32 |= GP12 [CH BIT 6]
-            GP13 =| 33  34 |= GND
-    [MONO]  GP19 =| 35  36 |= GP16 [CH BIT 7]
-  [BT LED]  GP26 =| 37  38 |= GP20 [BLUETOOTH]
-             GND =| 39  40 |= GP21 [POWER]
-                  +--------+
+                      +---]+---+
+  1 6 12 14      3V3 =|  1   2 |= 5V
+         (SDA)  GP02 =|  3   4 |= 5V
+         (SCL)  GP03 =|  5   6 |= GND
+                GP04 =|  7   8 |= GP14 (TXD)
+                 GND =|  9  10 |= GP15 (RXD)
+     [PWR LED]  GP17 =| 11  12 |= GP18 [CH BIT 0]      2
+                GP27 =| 13  14 |= GND
+                GP22 =| 15  16 |= GP23 [CH BIT 1]      3
+                 3V3 =| 17  18 |= GP24 [CH BIT 2]      4
+        (MOSI)  GP10 =| 19  20 |= GND
+        (MISO)  GP09 =| 21  22 |= GP25 [CH BIT 3]      5
+        (SCLK)  GP11 =| 23  24 |= GP08 (SPI0 CE0)      7
+                 GND =| 25  26 |= GP07 [CH BIT 5]      8
+                 GP00 =| 27  28 |= GP01
+  [CH BIT 4]   GP05 =| 29  30 |= GND                 13
+                GP06 =| 31  32 |= GP12 [CH BIT 6]      9
+                GP13 =| 33  34 |= GND
+        [MONO]  GP19 =| 35  36 |= GP16 [CH BIT 7]     10
+      [BT LED]  GP26 =| 37  38 |= GP20 [BLUETOOTH]    15
+                 GND =| 39  40 |= GP21 [POWER]        11
+                      +--------+
 ```
 
 | BCM | Phys | Dir | Function |
@@ -55,7 +57,7 @@ All input pins use internal pull-down resistors.
 | 23 | 16 | In | Channel bit 1 |
 | 24 | 18 | In | Channel bit 2 |
 | 25 | 22 | In | Channel bit 3 |
-| 8 | 24 | In | Channel bit 4 |
+| 5 | 29 | In | Channel bit 4 |
 | 7 | 26 | In | Channel bit 5 |
 | 12 | 32 | In | Channel bit 6 |
 | 16 | 36 | In | Channel bit 7 |
@@ -64,6 +66,41 @@ All input pins use internal pull-down resistors.
 | 19 | 35 | In | Mono audio (HIGH = mono, LOW = stereo) |
 | 17 | 11 | Out | Power LED |
 | 26 | 37 | Out | Bluetooth LED |
+| 8  | 24 | Out | Display CS (SPI0 CE0) |
+| 11 | 23 | Out | Display SCLK (SPI0) |
+| 10 | 19 | Out | Display MOSI (SPI0 DIN) |
+| 27 | 13 | Out | Display D/C |
+| 22 | 15 | Out | Display RESET |
+
+### Display Wiring
+
+Bare GC9A01 panel (14/15-pin variant). Backlight is wired directly to 3V3 / GND so it stays on whenever the Pi is powered.
+
+| Display pin | Display label | -> Pi BCM | -> Pi header pin |
+|---|---|---|---|
+| 1 | GND | GND | 6 (or 9, 14, 20, 25, 30, 34, 39) |
+| 2 | LEDK | GND | 9 |
+| 3 | LEDA | 3V3 | 17 (or 1) |
+| 4 | VDD | 3V3 | 1 |
+| 5 | D/C | GPIO 27 | 13 |
+| 6 | CS | GPIO 8 (CE0) | 24 |
+| 7 | SCL | GPIO 11 (SCLK) | 23 |
+| 8 | SDA | GPIO 10 (MOSI) | 19 |
+| 9 | RESET | GPIO 22 | 15 |
+| 10-15 | TP-* | (touch — leave open) | — |
+
+### Logo Assets
+
+Channel and mode logos are PNG or animated GIF files in `assets/channel-logos/`. They're rendered at native size into a 240x240 round-masked frame ("contain" fit, centred, black corners).
+
+- Reference channel logos from `channels.json` via the `logo` field, e.g. `"logo": "NRK-P1.png"`.
+- Special filenames consumed by the display service:
+  - `default.png` — fallback when a channel has no `logo` or the file is missing.
+  - `bluetooth.png` — shown in BT mode while no device is connected.
+  - `bluetooth-connected.png` — shown in BT mode while a device is connected.
+- Animated GIFs play indefinitely; per-frame delays from the GIF are honoured (clamped to >=20 ms).
+- Logos are cached in memory after first decode; restart radionette to pick up file changes.
+- On every power-on, `default.png` is shown for 2 s before the channel/BT logo appears (a brief "splash" so the panel doesn't snap straight to content).
 
 ## Raspberry Pi Setup
 
@@ -169,11 +206,13 @@ Edit `channels.json` to add or change radio stations. Each entry maps a dial pos
 ```json
 {
   "channels": {
-    "192": { "name": "NRK P1", "url": "https://lyd.nrk.no/..." },
-    "48":  { "name": "Radio Rock", "url": "https://live-bauerno.sharp-stream.com/..." }
+    "192": { "name": "NRK P1", "url": "https://lyd.nrk.no/...", "logo": "NRK-P1.png" },
+    "48":  { "name": "Radio Rock", "url": "https://live-bauerno.sharp-stream.com/...", "logo": "RadioRock.png" }
   }
 }
 ```
+
+The optional `logo` field is a filename (PNG or GIF) under `assets/channel-logos/`; if omitted or missing on disk, `default.png` is shown on the round display.
 
 The channel number is composed of two nibbles: bits 7-4 select the bank, bits 3-0 select the sub-channel within the bank. See the debug page (`/debug`) for a visual breakdown.
 

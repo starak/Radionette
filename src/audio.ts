@@ -150,8 +150,8 @@ async function moveStreamsToMono(realSink: string): Promise<void> {
     if (sinkName === realSink) {
       try {
         await pactl("move-sink-input", id, monoName);
-      } catch (err: any) {
-        console.warn(`[Audio] Failed to move sink-input ${id} to ${monoName}: ${err.message}`);
+      } catch {
+        // Sink-input may have vanished between listing and moving — ignore
       }
     }
   }
@@ -168,8 +168,8 @@ async function moveAllStreamsBackToReal(): Promise<void> {
       const realSink = sinkName.slice(MONO_PREFIX.length);
       try {
         await pactl("move-sink-input", id, realSink);
-      } catch (err: any) {
-        console.warn(`[Audio] Failed to move sink-input ${id} back to ${realSink}: ${err.message}`);
+      } catch {
+        // Sink-input may have vanished between listing and moving — ignore
       }
     }
   }
@@ -233,8 +233,8 @@ async function onSinkInputNew(inputIndex: string): Promise<void> {
 
   try {
     await pactl("move-sink-input", inputIndex, monoName);
-  } catch (err: any) {
-    console.warn(`[Audio] Failed to move new sink-input ${inputIndex} to ${monoName}: ${err.message}`);
+  } catch {
+    // Sink-input may have vanished between event and move — ignore
   }
 }
 

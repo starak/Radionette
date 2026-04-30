@@ -5,6 +5,7 @@ import { ChannelInfo } from "./state";
 interface ChannelEntry {
   name: string;
   url: string;
+  logo?: string;
 }
 
 interface ChannelsConfig {
@@ -49,6 +50,7 @@ export function lookupChannel(channelBits: number): ChannelInfo | null {
     number: channelBits,
     name: entry.name,
     url: entry.url,
+    logo: entry.logo,
   };
 }
 

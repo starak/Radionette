@@ -6,6 +6,7 @@ export interface ChannelInfo {
   number: number;
   name: string;
   url: string;
+  logo?: string;
 }
 
 export interface RadioState {

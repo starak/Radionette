@@ -1,30 +1,114 @@
 {
   "_comment": "Channel map: key is the decimal value of GPIO bits 0-7 (channel selector). 0 is the debug channel :)",
   "channels": {
-    "0": { "name": "Radio Rock", "url": "https://live-bauerno.sharp-stream.com/simulcast3_no.mp3" },
+    "0": {
+      "name": "Radio Rock",
+      "url": "https://live-bauerno.sharp-stream.com/simulcast3_no.mp3",
+      "logo": "RadioRock.png"
+    },
 
-    "192": { "name": "NRK P1", "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p1_dk8" },
-    "193": { "name": "NRK P1+", "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p1pluss" },
-    "200": { "name": "NRK P2", "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p2" },
-    "202": { "name": "NRK Klassisk", "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/klassisk" },
-    "204": { "name": "NRK Nyheter", "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/nyheter" },
+    "192": {
+      "name": "NRK P1",
+      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p1_dk8",
+      "logo": "NRK-P1.png"
+    },
+    "193": {
+      "name": "NRK P1+",
+      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p1pluss",
+      "logo": "NRK-P1Pluss.png"
+    },
+    "200": {
+      "name": "NRK P2",
+      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p2",
+      "logo": "NRK-P2.png"
+    },
+    "202": {
+      "name": "NRK Klassisk",
+      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/klassisk",
+      "logo": "NRK-Klassisk.png"
+    },
+    "204": {
+      "name": "NRK Nyheter",
+      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/nyheter",
+      "logo": "NRK-Nyheter.png"
+    },
 
-    "128": { "name": "NRK P3", "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p3" },
-    "129": { "name": "NRK P3 Musikk", "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p3musikk" },
-    "136": { "name": "NRK P13", "url": "http://lyd.nrk.no/nrk_radio_p13_mp3_h" },
-    "138": { "name": "NRK mP3", "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/mp3" },
-    "140": { "name": "NRK Jazz", "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/jazz" },
+    "128": {
+      "name": "NRK P3",
+      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p3",
+      "logo": "NRK-P3.png"
+    },
+    "129": {
+      "name": "NRK P3 Musikk",
+      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p3musikk",
+      "logo": "NRK-P3Musikk.png"
+    },
+    "136": {
+      "name": "NRK mP3",
+      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/mp3",
+      "logo": "NRK-MP3.png"
+    },
+    "138": {
+      "name": "NRK Jazz",
+      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/jazz",
+      "logo": "NRK-Jazz.png"
+    },
+    "140": {
+      "name": "NRK Sport",
+      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/sport",
+      "logo": "NRK-Sport.png"
+    },
 
-    "160": { "name": "NRK Folkemusikk", "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/folkemusikk" },
-    "161": { "name": "NRK Sámi Radio", "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/sapmi" },
-    "168": { "name": "P4 Lyden av Norge", "url": "https://p4.p4groupaudio.com/P04_MH" },
-    "170": { "name": "P5 Hits", "url": "https://p5.p4groupaudio.com/P05_MH" },
-    "172": { "name": "P7 Klem", "url": "https://p7.p4groupaudio.com/P07_MM" },
+    "160": {
+      "name": "P4 Lyden av Norge",
+      "url": "https://p4.p4groupaudio.com/P04_MH",
+      "logo": "P4.png"
+    },
+    "161": {
+      "name": "P5 Hits",
+      "url": "https://p5.p4groupaudio.com/P05_MH",
+      "logo": "P5.png"
+    },
+    "168": {
+      "name": "P6 Rock",
+      "url": "https://p6.p4groupaudio.com/P06_MH",
+      "logo": "P6.png"
+    },
+    "170": {
+      "name": "P7 Klem",
+      "url": "https://p7.p4groupaudio.com/P07_MM",
+      "logo": "P7.png"
+    },
+    "172": {
+      "name": "P8 Pop",
+      "url": "https://p8.p4groupaudio.com/P08_MH",
+      "logo": "P8.png"
+    },
 
-    "48": { "name": "Radio Rock", "url": "https://live-bauerno.sharp-stream.com/simulcast3_no.mp3" },
-    "49": { "name": "IRock 247", "url": "https://streamer.radio.co/s493283a7e/listen" },
-    "56": { "name": "P11 Bandit", "url": "https://p11.p4groupaudio.com/P11_MH" },
-    "58": { "name": "NRJ", "url": "https://nrj.p4groupaudio.com/NRJ_MH" },
-    "60": { "name": "P10 Country", "url": "https://p10.p4groupaudio.com/P10_MH" }
+    "48": {
+      "name": "Radio Rock",
+      "url": "https://live-bauerno.sharp-stream.com/simulcast3_no.mp3",
+      "logo": "RadioRock.png"
+    },
+    "49": {
+      "name": "IRock 247",
+      "url": "https://streamer.radio.co/s493283a7e/listen",
+      "logo": "iRock247.png"
+    },
+    "56": {
+      "name": "P9 Retro",
+      "url": "https://p9.p4groupaudio.com/P9_MH",
+      "logo": "P9.png"
+    },
+    "58": {
+      "name": "P10 Country",
+      "url": "https://p10.p4groupaudio.com/P10_MH",
+      "logo": "P10.png"
+    },
+    "60": {
+      "name": "Radio Norge",
+      "url": "https://live-bauerno.sharp-stream.com/simulcast5_no.mp3",
+      "logo": "radio-norge.png"
+    }
   }
 }

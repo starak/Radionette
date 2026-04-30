@@ -7,13 +7,17 @@ Internet radio controller for Raspberry Pi 4 Model B. Reads physical radio dial 
 ### Hardware
 - **Raspberry Pi 4 Model B**
 - **11 GPIO input pins** from a physical rotary dial switch and mono switch
-  - Bits 0-7 (GPIO 18, 23, 24, 25, 8, 7, 12, 16): Channel selector — 15 unique positions across two banks
+  - Bits 0-7 (GPIO 18, 23, 24, 25, 5, 7, 12, 16): Channel selector — 15 unique positions across two banks
   - Bit 8 (GPIO 20): Bluetooth indicator
   - Bit 9 (GPIO 21): Power indicator
   - Bit 10 (GPIO 19): Mono switch (HIGH = mono, LOW = stereo)
 - **2 GPIO output pins** for indicator LEDs
-  - GPIO 11: Power LED
+  - GPIO 17: Power LED
   - GPIO 26: Bluetooth LED
+- **GC9A01 1.28" 240x240 round IPS display** on SPI0
+  - SPI0 CS=GPIO 8, SCLK=GPIO 11, MOSI=GPIO 10
+  - D/C=GPIO 27, RESET=GPIO 22
+  - Backlight (LEDA/LEDK) wired to 3V3/GND (always on while Pi is powered)
 - Audio output via 3.5mm jack or HDMI
 - **ADS1115 16-bit ADC** on I2C bus 1 (address 0x48) — reads volume potentiometer on channel A0
 
@@ -40,7 +44,7 @@ Power ON + Bluetooth OFF
 
 | File | Purpose |
 |---|---|
-| `src/index.ts` | Entry point — wires modules: channels -> player -> bluetooth -> hotspot-alert -> web -> gpio |
+| `src/index.ts` | Entry point — wires modules: channels -> player -> bluetooth -> hotspot-alert -> web -> gpio -> volume -> display |
 | `src/state.ts` | Central state singleton + EventEmitter. All modules communicate through this. |
 | `src/gpio.ts` | Reads 11 input pins every 10ms, debounces (50ms), drives state machine, controls LED outputs. Falls back to dev mode when rpio unavailable. Exports `injectGpioValue()` for virtual dial API and `resetGpioOverride()` to revert to physical pins. |
 | `src/channels.ts` | Loads `channels.json` at startup. Looks up channel number -> name + URL. |
@@ -55,21 +59,30 @@ Power ON + Bluetooth OFF
 | `src/public/wifi.html` | Single-file WiFi settings page with inline CSS/JS. Same dark theme, tab navigation. Network scan list with signal bars, connect modal with password field, AP-mode warning. |
 | `src/public/debug.html` | Single-file debug page with inline CSS/JS. Same dark theme, tab navigation. Color-coded GPIO bit display (green=power, blue=bluetooth, amber=bank/sub), decoded bank/sub values, virtual dial controls (PWR, BT, Bank, Sub buttons that inject GPIO values via API — physical dial overrides, reset-to-physical button clears override), channel info table, full state dump table, grouped channel map. System card with WiFi reset and reboot buttons. Live WebSocket updates. |
 | `src/gpio-logger.ts` | Standalone utility — logs raw GPIO values on change for mapping physical dial positions. |
-| `channels.json` | Channel configuration — maps dial position numbers to station name + stream URL. Edit this to change stations. |
+| `src/display.ts` | Low-level GC9A01 SPI driver. `initDisplay`, `drawRgb565Buffer`, `fillScreen`, `testPattern`, `stopDisplay`. Uses `spi-device` + `rpio`. Closes GPIO with `PIN_PRESERVE` on shutdown so the last frame stays visible. |
+| `src/render/frame.ts` | Pixel-format helpers — RGBA8888 -> RGB565 big-endian, solid-colour frame builder. |
+| `src/render/logos.ts` | Logo loader + cache. Renders PNG via `canvas`; renders animated GIF via `gifuct-js` + canvas compositor. Outputs 240x240 round-masked RGB565 frames with per-frame delays. Cached by absolute path. |
+| `src/render/displayController.ts` | Orchestrator — owns display lifecycle, single-slot paint queue (newer requests supersede in-flight loads), animation timer for GIFs, graceful shutdown that waits for in-flight paint so PIN_PRESERVE leaves a coherent frame. |
+| `src/display-service.ts` | Glue between `radioState` events and `displayController`. State -> logo mapping: power off = black; bluetooth + no device = `bluetooth.png`; bluetooth + connected = `bluetooth-connected.png`; radio + channel = `channel.logo` (or `default.png`). |
+| `src/scripts/display-smoke.ts` | Hardware smoke test — red/green/blue/RGBW bars cycle. Run with `npm run smoke-display` on the Pi. |
+| `src/scripts/display-render-test.ts` | Render pipeline test — cycles through every channel logo + BT logos + default fallback. Run with `npm run render-test` on the Pi. |
+| `channels.json` | Channel configuration — maps dial position numbers to station name + stream URL + optional `logo` filename (relative to `assets/channel-logos/`). Edit this to change stations. |
 | `wifi-fallback.sh` | Boot script — waits 30s for WiFi, starts hotspot if no connection. Installed as a systemd service by `setup-pi.sh`. |
 | `assets/bt-connect.wav` | Ascending two-tone chime played when a Bluetooth device connects. |
 | `assets/bt-ready.wav` | Soft single tone played when BT mode activates or a device disconnects. |
 | `assets/hotspot-bleep.wav` | 880Hz tone followed by 3s silence. Loops via aplay when hotspot is active in radio mode. |
+| `assets/channel-logos/` | PNG/GIF logos shown on the round display. Filenames referenced from `channels.json` `logo` field. Special files: `default.png` (fallback), `bluetooth.png` (BT mode, no device), `bluetooth-connected.png` (BT mode, device connected). |
 
 ### Event Flow
 
 ```
 GPIO poll (10ms) -> debounce (50ms) -> state.ts EventEmitter
-  |- player.ts listens        -> spawns/kills mpg123 (with auto-retry on failure)
-  |- bluetooth.ts listens     -> enables/disables BT adapter
-  |- audio.ts listens         -> loads/unloads per-sink PulseAudio mono remap-sinks, watches for new sinks/inputs
-  |- hotspot-alert.ts listens -> bleeps when hotspot active in radio mode
-  +- web.ts listens           -> broadcasts to WebSocket clients
+  |- player.ts listens          -> spawns/kills mpg123 (with auto-retry on failure)
+  |- bluetooth.ts listens       -> enables/disables BT adapter
+  |- audio.ts listens           -> loads/unloads per-sink PulseAudio mono remap-sinks, watches for new sinks/inputs
+  |- hotspot-alert.ts listens   -> bleeps when hotspot active in radio mode
+  |- display-service.ts listens -> picks logo for current state, hands to displayController
+  +- web.ts listens             -> broadcasts to WebSocket clients
 ```
 
 Events emitted by state.ts:
@@ -210,6 +223,32 @@ The hotspot alert module (`src/hotspot-alert.ts`) provides an audible notificati
 - **ALSA, not PulseAudio:** Uses `/usr/bin/aplay` instead of `paplay` because the hotspot bleep needs to work at early boot before the PulseAudio session starts
 - **Lifecycle:** Starts polling on `mode:radio`, stops on `mode:bluetooth` or `power:off`
 - **Error handling:** Delays 5s before retrying if `aplay` fails, to avoid tight spin loops
+
+### Display Details
+
+The display stack drives a Waveshare-style GC9A01 1.28" 240x240 round IPS panel via SPI0:
+
+- **Driver (`src/display.ts`):** Low-level SPI + GPIO. Uses `spi-device` for SPI (mode 0, 32 MHz, 4096-byte chunks) and `rpio` for D/C and RESET. Init sequence is the proven Waveshare variant (MADCTL=0x48, COLMOD=0x05, inversion ON, 50/50/150 ms reset pulse). `stopDisplay()` closes the GPIO pins with `rpio.PIN_PRESERVE` so the last frame stays visible after Node exits — this is critical, otherwise the panel blanks the moment the process dies.
+- **Render pipeline (`src/render/`):**
+  - `frame.ts` — pure pixel-format helpers. Converts an RGBA8888 240x240 buffer to RGB565 big-endian (115200 bytes) suitable for `drawRgb565Buffer()`. Also `solidFrame(r,g,b)` for fallback paint.
+  - `logos.ts` — loads PNG/GIF logos via `node-canvas` and `gifuct-js`. Each frame is composited onto a 240x240 canvas with a circular clip path (anything outside the circle stays black so the round panel corners look intentional), "contain"-fit and centred. Animated GIFs are decoded honouring disposal types (clear-to-bg, restore-previous) and per-frame delays. Result is cached in memory keyed by absolute path.
+  - `displayController.ts` — orchestrator. Owns the driver lifecycle, a single-slot pending-paint queue (so rapid channel changes always converge on the latest), and the animation timer for GIFs. `showLogo()` is fire-and-forget; `shutdown()` waits up to 500 ms for any in-flight paint to finish so PIN_PRESERVE leaves a coherent frame.
+- **Service (`src/display-service.ts`):** Subscribes to `state:change`. State -> logo mapping:
+  - `power: false` -> solid black
+  - `mode === "bluetooth"` + `bluetoothDevice === null` -> `bluetooth.png`
+  - `mode === "bluetooth"` + connected -> `bluetooth-connected.png`
+  - `mode === "radio"` + channel -> `channel.logo` (or `default.png` fallback)
+  - Anything else (radio with no channel selected) -> `default.png`
+  - Tracks `lastApplied` so it doesn't re-paint identical state.
+- **Power-on splash:** On every `power:on` event, paints `default.png` for 2 s before applying the real state. While the splash is active a `splashActive` flag suppresses repaints from the post-power-on event burst (`mode:radio`, `setChannel`, etc. all fire synchronously after `setPower(true)` — without the suppression they would race the splash off the screen). The one exception is a power-off during the splash window: it cancels immediately and goes black. After the timer fires, `lastApplied` is reset to force a fresh repaint of whatever state is current.
+- **Cache pre-warm:** During init, `default.png`, `bluetooth.png`, and `bluetooth-connected.png` are decoded eagerly. Otherwise the first power-on after boot would sit on a black panel for ~1 s while node-canvas chews through the PNG.
+- **Wiring in `src/index.ts`:** Display service initialises **last** (so all state-emitting modules are already wired and `applyState(radioState.state)` paints whatever is current at boot). On shutdown it stops **first**, before GPIO/SPI are torn down underneath it, so PIN_PRESERVE has clean state to capture.
+- **Pi-only native dep:** `canvas` is in `optionalDependencies` so `npm install` on macOS doesn't fail (Mac would need Homebrew prerequisites). The render code lazy-`require()`s canvas, so importing the render module on Mac is safe — it only fails if you actually try to render.
+- **Apt packages on Pi (installed by `setup-pi.sh`):** `pkg-config libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev` for `node-canvas`'s native build.
+- **Test scripts:**
+  - `npm run smoke-display` -> `dist/scripts/display-smoke.js` — driver-only sanity (red/green/blue/RGBW bars).
+  - `npm run render-test` -> `dist/scripts/display-render-test.js` — exercises the full pipeline against every channel logo + the BT and default fallbacks.
+  - Both must be run with `pm2 stop radionette` first so they own the SPI bus.
 
 ### Web UI Conventions
 

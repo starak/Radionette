@@ -13,7 +13,7 @@ try {
 
 // GPIO pin assignments (BCM numbering)
 // Bits 0-7: channel selector, Bit 8: bluetooth, Bit 9: power, Bit 10: mono
-const CHANNEL_PINS: readonly number[] = [18, 23, 24, 25, 8, 7, 12, 16]; // bits 0-7
+const CHANNEL_PINS: readonly number[] = [18, 23, 24, 25, 5, 7, 12, 16]; // bits 0-7
 const BLUETOOTH_PIN = 20; // bit 8
 const POWER_PIN = 21; // bit 9
 const MONO_PIN = 19; // bit 10
@@ -21,7 +21,7 @@ const MONO_PIN = 19; // bit 10
 const ALL_INPUT_PINS = [...CHANNEL_PINS, BLUETOOTH_PIN, POWER_PIN, MONO_PIN];
 
 // Output pins — indicator lights
-const POWER_LED_PIN = 11;     // Power indicator light
+const POWER_LED_PIN = 17;     // Power indicator light
 const BLUETOOTH_LED_PIN = 26; // Bluetooth indicator light
 
 const POLL_INTERVAL_MS = 10;
@@ -59,15 +59,15 @@ function processValue(rawValue: number): void {
 
   radioState.setRawGpio(rawValue);
 
-  // Mono is independent of power/mode — always update
-  radioState.setMono(monoBit === 1);
-
   // Power check first — if off, everything stops
   radioState.setPower(powerBit === 1);
   if (powerBit === 0) {
     updateOutputs(false, false);
     return;
   }
+
+  // Mono only matters when power is on
+  radioState.setMono(monoBit === 1);
 
   // Bluetooth check — if active, radio stops
   radioState.setBluetooth(bluetoothBit === 1);
@@ -117,9 +117,18 @@ function poll(): void {
       if (rawValue !== stableRawValue) {
         stableRawValue = rawValue;
         const binary = rawValue.toString(2).padStart(11, "0");
-        const ch = lookupChannel(rawValue & 0xff);
-        const chLabel = ch ? `${ch.number} – ${ch.name}` : "none";
-        console.log(`[GPIO] Binary: ${binary}  Decimal: ${rawValue}  Channel: ${chLabel}`);
+        const powerBit = (rawValue >> 9) & 1;
+        const bluetoothBit = (rawValue >> 8) & 1;
+        let label: string;
+        if (powerBit === 0) {
+          label = "Power OFF";
+        } else if (bluetoothBit === 1) {
+          label = "Bluetooth";
+        } else {
+          const ch = lookupChannel(rawValue & 0xff);
+          label = ch ? `Channel: ${ch.number} – ${ch.name}` : "Channel: none";
+        }
+        console.log(`[GPIO] Binary: ${binary}  Decimal: ${rawValue}  ${label}`);
         processValue(rawValue);
       }
     }, DEBOUNCE_MS);
