@@ -4,7 +4,8 @@ import { initPlayer, stopPlayer } from "./player";
 import { initBluetooth, stopBluetooth } from "./bluetooth";
 import { initHotspotAlert, stopHotspotAlert } from "./hotspot-alert";
 import { initAudio, stopAudio } from "./audio";
-import { startGpio, stopGpio } from "./gpio";
+import { startGpio, stopGpio, getBacklightHandle } from "./gpio";
+import { startBacklight, stopBacklight } from "./backlight";
 import { startWebServer, stopWebServer } from "./web";
 import { initWifi } from "./wifi";
 import { initVolume, stopVolume } from "./volume";
@@ -46,6 +47,15 @@ initWifi();
 // 8. Start GPIO polling (drives state changes)
 startGpio();
 
+// 8b. Start backlight controller (PWM on the backlight pin opened by gpio.ts).
+//     Must come AFTER startGpio() so the pin is already in OUTPUT mode.
+const blHandle = getBacklightHandle();
+if (blHandle) {
+  startBacklight(blHandle.rpio, blHandle.pin);
+} else {
+  console.warn("[Backlight] No GPIO handle (dev mode) — backlight inactive");
+}
+
 // 9. Initialize volume ADC (I2C ADS1115 → PulseAudio master volume)
 initVolume();
 
@@ -73,6 +83,8 @@ async function shutdown(): Promise<void> {
     console.error("[Display] shutdown error:", err);
   }
   stopVolume();
+  // Stop backlight before gpio.ts closes the pin.
+  stopBacklight();
   stopGpio();
   stopHotspotAlert();
   stopAudio();

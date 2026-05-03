@@ -66,7 +66,7 @@ All input pins use internal pull-down resistors.
 | 19 | 35 | In | Audio mode (LOW = mono [default], HIGH = stereo) |
 | 17 | 11 | Out | Power LED |
 | 26 | 37 | Out | Bluetooth LED |
-| 13 | 33 | Out | Display backlight (MOSFET gate) |
+| 13 | 33 | Out | Display backlight (MOSFET gate, on/off) |
 | 8  | 24 | Out | Display CS (SPI0 CE0) |
 | 11 | 23 | Out | Display SCLK (SPI0) |
 | 10 | 19 | Out | Display MOSI (SPI0 DIN) |
@@ -90,7 +90,7 @@ Bare GC9A01 panel (14/15-pin variant). Backlight (LEDA) is switched by GPIO 13 t
 | 9 | RESET | GPIO 22 | 15               |
 | 10-15 | TP-* | (touch — leave open) | —                |
 
-**Backlight switching:** N-channel MOSFET (e.g. 2N7000, AO3400) — gate to GPIO 13 (Pi pin 33), source to GND, drain to LEDK; LEDA stays on 3V3. Alternatively a P-channel high-side switch on the LEDA rail. The `gpio.ts` module drives the gate HIGH when power is on and LOW when off.
+**Backlight switching:** N-channel MOSFET (e.g. 2N7000, AO3400) — gate to GPIO 13 (Pi pin 33), source to GND, drain to LEDK; LEDA stays on 3V3. Alternatively a P-channel high-side switch on the LEDA rail. The `backlight.ts` module drives the gate on/off (no PWM) with a 10 s auto-off after the last user-visible event (channel change, BT device connect). Stays on while in BT search mode.
 
 ### Logo Assets
 

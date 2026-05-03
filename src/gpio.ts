@@ -93,7 +93,8 @@ function updateOutputs(power: boolean, bluetooth: boolean): void {
   if (!rpio) return;
   rpio.write(POWER_LED_PIN, power ? rpio.HIGH : rpio.LOW);
   rpio.write(BLUETOOTH_LED_PIN, bluetooth ? rpio.HIGH : rpio.LOW);
-  rpio.write(BACKLIGHT_PIN, power ? rpio.HIGH : rpio.LOW);
+  // Backlight is owned by backlight.ts (driven via PWM, reacting to state
+  // events). Do not write BACKLIGHT_PIN here — it would fight the PWM loop.
 }
 
 function poll(): void {
@@ -224,6 +225,15 @@ export function resetGpioOverride(): void {
   processValue(rawValue);
 }
 
+/**
+ * Expose the live rpio module + backlight pin so backlight.ts can drive
+ * software PWM on it. Returns null if rpio failed to load (dev mode).
+ */
+export function getBacklightHandle(): { rpio: any; pin: number } | null {
+  if (!rpio) return null;
+  return { rpio, pin: BACKLIGHT_PIN };
+}
+
 export function stopGpio(): void {
   if (pollTimer) {
     clearInterval(pollTimer);
@@ -239,6 +249,7 @@ export function stopGpio(): void {
   console.log("[GPIO] Cleaning up pins...");
   rpio.write(POWER_LED_PIN, rpio.LOW);
   rpio.write(BLUETOOTH_LED_PIN, rpio.LOW);
+  // BACKLIGHT_PIN is set LOW by stopBacklight() before we get here.
   rpio.write(BACKLIGHT_PIN, rpio.LOW);
 
   ALL_INPUT_PINS.forEach((pin) => {
