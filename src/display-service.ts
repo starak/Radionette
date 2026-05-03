@@ -40,6 +40,10 @@ let splashTimer: NodeJS.Timeout | null = null;
 
 function pickLogoForState(s: RadioState): string | null {
   if (!s.power) return null; // signal: black
+  // Debug override takes precedence over normal state-based selection while
+  // the radio is powered on. Power-off still wins so we don't burn pixels
+  // with a forced logo on a "off" panel.
+  if (logoOverride) return logoOverride;
   if (s.mode === "bluetooth") {
     return s.bluetoothDevice
       ? opts!.bluetoothConnectedLogo
@@ -75,6 +79,10 @@ let lastApplied: string | null | undefined = undefined;
 // flows through but doesn't touch the panel. The splash timer eventually
 // flips this off and forces a repaint of the then-current state.
 let splashActive = false;
+
+// Debug-only: force a specific logo regardless of state. Set via
+// setLogoOverride() from the web debug page. null = no override.
+let logoOverride: string | null = null;
 
 function applyState(s: RadioState): void {
   if (splashActive) {
@@ -161,4 +169,24 @@ export async function stopDisplayService(): Promise<void> {
  */
 export function defaultLogoDir(): string {
   return path.resolve(process.cwd(), "assets/channel-logos");
+}
+
+/**
+ * Debug helper: force a specific logo onto the display, overriding the
+ * normal state-driven selection. Pass null to clear the override and resume
+ * normal behaviour. Cancels any active splash so the override takes effect
+ * immediately.
+ */
+export function setLogoOverride(ref: string | null): void {
+  logoOverride = ref;
+  if (splashActive) {
+    clearSplash();
+    splashActive = false;
+  }
+  lastApplied = undefined; // force repaint
+  applyState(radioState.state);
+}
+
+export function getLogoOverride(): string | null {
+  return logoOverride;
 }

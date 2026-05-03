@@ -6,6 +6,7 @@ import { radioState, RadioState } from "./state";
 import { getAllChannels } from "./channels";
 import { getWifiStatus, scanNetworks, connectToNetwork, resetWifiConfig, rebootSystem } from "./wifi";
 import { injectGpioValue, resetGpioOverride } from "./gpio";
+import { setLogoOverride, getLogoOverride } from "./display-service";
 
 const PORT = 8080;
 
@@ -17,6 +18,7 @@ function getStatusPayload(): string {
     type: "state",
     ...radioState.state,
     channels: getAllChannels(),
+    logoOverride: getLogoOverride(),
   });
 }
 
@@ -164,6 +166,31 @@ export function startWebServer(): void {
       resetGpioOverride();
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ success: true }));
+      return;
+    }
+
+    if (req.url === "/api/debug/logo-override" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", () => {
+        try {
+          const { ref } = JSON.parse(body);
+          if (ref !== null && typeof ref !== "string") {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ success: false, error: "ref must be a string or null" }));
+            return;
+          }
+          setLogoOverride(ref);
+          // State didn't actually change so radioState won't broadcast — push
+          // a manual update so connected clients see the new logoOverride flag.
+          broadcast(getStatusPayload());
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: true, ref }));
+        } catch (err: any) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: false, error: "Invalid JSON" }));
+        }
+      });
       return;
     }
 

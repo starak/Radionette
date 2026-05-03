@@ -414,7 +414,7 @@
     <h2>GPIO Input</h2>
     <div class="bit-display" id="bit-display"></div>
     <div class="bit-labels">
-      <div class="bit-label-group lbl-green" style="width:28px">mono</div>
+      <div class="bit-label-group lbl-green" style="width:28px">st</div>
       <div class="bit-label-group lbl-green" style="width:28px">pwr</div>
       <div class="bit-label-group lbl-blue" style="width:28px">bt</div>
       <div class="bit-label-group lbl-amber" style="width:118px">bank [7:4]</div>
@@ -422,7 +422,7 @@
     </div>
     <div id="decoded-fields">
       <div class="decoded-row">
-        <span class="decoded-label">Mono (bit 10)</span>
+        <span class="decoded-label">Stereo bit (bit 10)</span>
         <span class="decoded-value" id="dec-mono">---</span>
       </div>
       <div class="decoded-row">
@@ -506,15 +506,30 @@
       </div>
     </div>
     <div class="dial-group">
-      <span class="dial-label">Mono</span>
+      <span class="dial-label">Audio</span>
       <div class="dial-buttons" id="dial-mono">
-        <button class="dial-btn" data-val="0" onclick="dialSet('mono',0)">Off</button>
-        <button class="dial-btn" data-val="1" onclick="dialSet('mono',1)">On</button>
+        <button class="dial-btn" data-val="0" onclick="dialSet('mono',0)">Mono</button>
+        <button class="dial-btn" data-val="1" onclick="dialSet('mono',1)">Stereo</button>
       </div>
     </div>
     <div class="dial-note">
       Physical dial overrides on next change
       <button class="dial-btn" style="margin-left:0.6rem" onclick="dialReset()">Reset to physical</button>
+    </div>
+  </div>
+
+  <!-- Display override -->
+  <div class="card">
+    <h2>Display Override</h2>
+    <div class="dial-group">
+      <span class="dial-label">Logo</span>
+      <div class="dial-buttons" id="dial-logo-override">
+        <button class="dial-btn" data-val="" onclick="setLogoOverride(null)">Normal</button>
+        <button class="dial-btn" data-val="test-grid.png" onclick="setLogoOverride('test-grid.png')">Test grid</button>
+      </div>
+    </div>
+    <div class="dial-note">
+      Forces a specific logo onto the panel regardless of channel/mode. Power-off still blanks the screen.
     </div>
   </div>
 
@@ -633,8 +648,8 @@
       const bankLabel = bankMap[bankRaw];
       const subLabel = subMap[subRaw];
 
-      $('dec-mono').textContent = mono ? 'ON' : 'OFF';
-      $('dec-mono').className = 'decoded-value' + (mono ? ' clr-green' : '');
+      $('dec-mono').textContent = mono ? 'STEREO' : 'MONO';
+      $('dec-mono').className = 'decoded-value' + (mono ? '' : ' clr-green');
       $('dec-power').textContent = power ? 'ON' : 'OFF';
       $('dec-power').className = 'decoded-value' + (power ? ' clr-green' : '');
       $('dec-bt').textContent = bt ? 'ON' : 'OFF';
@@ -703,6 +718,9 @@
 
       // Sync virtual dial buttons to reflect current GPIO state
       syncDialFromState(s);
+
+      // Sync logo override buttons
+      syncLogoOverrideButtons(s.logoOverride || null);
     }
 
     function escHtml(s) {
@@ -794,6 +812,28 @@
         await fetch('/api/debug/gpio/reset', { method: 'POST' });
       } catch (e) {
         console.error('Dial reset error:', e);
+      }
+    }
+
+    // --- Display logo override ---
+
+    async function setLogoOverride(ref) {
+      try {
+        await fetch('/api/debug/logo-override', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ref })
+        });
+      } catch (e) {
+        console.error('Logo override error:', e);
+      }
+    }
+
+    function syncLogoOverrideButtons(currentRef) {
+      const btns = $('dial-logo-override').children;
+      for (const b of btns) {
+        const matches = (b.dataset.val || null) === (currentRef || null);
+        b.className = 'dial-btn' + (matches ? ' active-amber' : '');
       }
     }
 
