@@ -27,6 +27,7 @@ let pin: number = -1;
 let offTimer: NodeJS.Timeout | null = null;
 let bright = false;          // current pin state cache
 let brightLocked = false;    // suppresses auto-off (BT search)
+let overrideLocked = false;  // external lock (e.g. debug logo override)
 
 let lastBtSearching = false;
 let lastBtDevice: string | null = null;
@@ -46,7 +47,7 @@ function writePin(on: boolean): void {
 
 function scheduleOff(): void {
   clearOffTimer();
-  if (brightLocked) return;
+  if (brightLocked || overrideLocked) return;
   offTimer = setTimeout(() => {
     offTimer = null;
     writePin(false);
@@ -63,6 +64,11 @@ function wake(): void {
 function setOff(): void {
   clearOffTimer();
   brightLocked = false;
+  // Don't clear overrideLocked — it's owned by the caller (debug page).
+  if (overrideLocked) {
+    writePin(true);
+    return;
+  }
   writePin(false);
 }
 
@@ -111,6 +117,28 @@ function onChannelChange(): void {
 }
 
 /**
+ * External lock — keeps the backlight on indefinitely until released.
+ * Used by the debug page logo-override so the test grid is always visible.
+ * Independent of brightLocked (BT search) so neither overrides the other.
+ */
+export function setBacklightOverrideLock(locked: boolean): void {
+  overrideLocked = locked;
+  if (locked) {
+    clearOffTimer();
+    writePin(true);
+  } else {
+    // Released — if power is on, re-arm the auto-off timer from now.
+    // Otherwise drop to off.
+    if (radioState.state.power) {
+      // Don't change the brightness state if BT search has its own lock.
+      if (!brightLocked) scheduleOff();
+    } else {
+      writePin(false);
+    }
+  }
+}
+
+/**
  * Initialise the backlight controller. The pin must already be opened as
  * OUTPUT/LOW by gpio.ts before calling this. We do not open or close the
  * pin ourselves — gpio.ts owns its lifecycle.
@@ -120,6 +148,7 @@ export function startBacklight(rpioModule: any, gpioPin: number): void {
   pin = gpioPin;
   bright = false;
   brightLocked = false;
+  overrideLocked = false;
   lastBtSearching = false;
   lastBtDevice = null;
 

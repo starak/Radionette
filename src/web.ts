@@ -6,7 +6,7 @@ import { radioState, RadioState } from "./state";
 import { getAllChannels } from "./channels";
 import { getWifiStatus, scanNetworks, connectToNetwork, resetWifiConfig, rebootSystem } from "./wifi";
 import { injectGpioValue, resetGpioOverride } from "./gpio";
-import { setLogoOverride, getLogoOverride } from "./display-service";
+import { setLogoOverride, getLogoOverride, setDisplayTint, getDisplayTint } from "./display-service";
 
 const PORT = 8080;
 
@@ -19,6 +19,7 @@ function getStatusPayload(): string {
     ...radioState.state,
     channels: getAllChannels(),
     logoOverride: getLogoOverride(),
+    displayTint: getDisplayTint(),
   });
 }
 
@@ -189,6 +190,31 @@ export function startWebServer(): void {
         } catch (err: any) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ success: false, error: "Invalid JSON" }));
+        }
+      });
+      return;
+    }
+
+    if (req.url === "/api/debug/tint" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", async () => {
+        try {
+          const { r, g, b } = JSON.parse(body);
+          const validate = (v: any, name: string) => {
+            if (v === undefined) return;
+            if (typeof v !== "number" || !isFinite(v) || v < 0 || v > 2) {
+              throw new Error(`${name} must be a number 0..2`);
+            }
+          };
+          validate(r, "r"); validate(g, "g"); validate(b, "b");
+          await setDisplayTint({ r, g, b });
+          broadcast(getStatusPayload());
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: true, tint: getDisplayTint() }));
+        } catch (err: any) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: false, error: err.message || "Invalid JSON" }));
         }
       });
       return;

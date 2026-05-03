@@ -21,7 +21,9 @@
 import * as path from "path";
 import { radioState, RadioState } from "./state";
 import { displayController } from "./render/displayController";
-import { loadLogo } from "./render/logos";
+import { loadLogo, clearLogoCache } from "./render/logos";
+import { setTint, getTint, Tint } from "./render/frame";
+import { setBacklightOverrideLock } from "./backlight";
 
 export interface DisplayServiceOptions {
   dcPin: number;
@@ -183,10 +185,40 @@ export function setLogoOverride(ref: string | null): void {
     clearSplash();
     splashActive = false;
   }
+  // While an override is active (debug test grid etc.), keep the backlight
+  // forced on so the user can actually see what they're inspecting.
+  setBacklightOverrideLock(ref !== null);
   lastApplied = undefined; // force repaint
   applyState(radioState.state);
 }
 
 export function getLogoOverride(): string | null {
   return logoOverride;
+}
+
+/**
+ * Debug helper: change the colour tint applied to every frame and re-render
+ * the current logo immediately. Tint is baked into the cached RGB565 frames
+ * so we MUST clear the cache after changing it; the next paint then re-decodes
+ * source files with the new tint.
+ */
+export async function setDisplayTint(next: Partial<Tint>): Promise<void> {
+  setTint(next);
+  clearLogoCache();
+  // Pre-warm the logos that need to appear instantly so power-on / BT toggle
+  // doesn't sit on a delayed frame while node-canvas re-decodes.
+  if (opts) {
+    await Promise.all([
+      loadLogo(opts.defaultLogo),
+      loadLogo(opts.bluetoothLogo),
+      loadLogo(opts.bluetoothConnectedLogo),
+    ]);
+  }
+  // Force a repaint of the current state with the new tint.
+  lastApplied = undefined;
+  applyState(radioState.state);
+}
+
+export function getDisplayTint(): Tint {
+  return getTint();
 }

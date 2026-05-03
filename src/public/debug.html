@@ -518,6 +518,35 @@
     </div>
   </div>
 
+  <!-- Display tint -->
+  <div class="card">
+    <h2>Display Tint</h2>
+    <div class="dial-group">
+      <span class="dial-label">R</span>
+      <input type="range" min="0.0" max="1.5" step="0.01" id="tint-r" oninput="onTintInput()" style="flex:1">
+      <span class="volume-pct" id="tint-r-val">1.00</span>
+    </div>
+    <div class="dial-group">
+      <span class="dial-label">G</span>
+      <input type="range" min="0.0" max="1.5" step="0.01" id="tint-g" oninput="onTintInput()" style="flex:1">
+      <span class="volume-pct" id="tint-g-val">1.00</span>
+    </div>
+    <div class="dial-group">
+      <span class="dial-label">B</span>
+      <input type="range" min="0.0" max="1.5" step="0.01" id="tint-b" oninput="onTintInput()" style="flex:1">
+      <span class="volume-pct" id="tint-b-val">1.00</span>
+    </div>
+    <div class="dial-group" style="justify-content:flex-end;gap:0.4rem">
+      <button class="dial-btn" onclick="applyTintPreset(1.0,1.0,1.0)">Neutral</button>
+      <button class="dial-btn" onclick="applyTintPreset(1.05,0.90,0.70)">Warm</button>
+      <button class="dial-btn" onclick="applyTintPreset(1.10,0.75,0.50)">Retro</button>
+      <button class="dial-btn" onclick="applyTintPreset(1.15,0.60,0.30)">Ember</button>
+    </div>
+    <div class="dial-note">
+      Per-channel multipliers applied at frame conversion. Cache rebuilds on change.
+    </div>
+  </div>
+
   <!-- Display override -->
   <div class="card">
     <h2>Display Override</h2>
@@ -721,6 +750,9 @@
 
       // Sync logo override buttons
       syncLogoOverrideButtons(s.logoOverride || null);
+
+      // Sync tint sliders
+      syncTintFromServer(s.displayTint);
     }
 
     function escHtml(s) {
@@ -835,6 +867,65 @@
         const matches = (b.dataset.val || null) === (currentRef || null);
         b.className = 'dial-btn' + (matches ? ' active-amber' : '');
       }
+    }
+
+    // --- Display tint ---
+
+    let tintDebounce = null;
+    let tintInflight = false;
+    let lastServerTint = { r: 1, g: 1, b: 1 };
+
+    function onTintInput() {
+      const r = parseFloat($('tint-r').value);
+      const g = parseFloat($('tint-g').value);
+      const b = parseFloat($('tint-b').value);
+      $('tint-r-val').textContent = r.toFixed(2);
+      $('tint-g-val').textContent = g.toFixed(2);
+      $('tint-b-val').textContent = b.toFixed(2);
+      // Debounce so dragging the slider doesn't spam decode requests.
+      if (tintDebounce) clearTimeout(tintDebounce);
+      tintDebounce = setTimeout(() => sendTint({ r, g, b }), 150);
+    }
+
+    async function sendTint(t) {
+      if (tintInflight) {
+        // Coalesce: queue the latest by re-arming the debounce.
+        tintDebounce = setTimeout(() => sendTint(t), 150);
+        return;
+      }
+      tintInflight = true;
+      try {
+        await fetch('/api/debug/tint', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(t)
+        });
+      } catch (e) {
+        console.error('Tint error:', e);
+      } finally {
+        tintInflight = false;
+      }
+    }
+
+    function applyTintPreset(r, g, b) {
+      $('tint-r').value = r;
+      $('tint-g').value = g;
+      $('tint-b').value = b;
+      onTintInput();
+    }
+
+    function syncTintFromServer(t) {
+      if (!t) return;
+      // Only update sliders if the server value differs — prevents fighting
+      // the user mid-drag.
+      if (t.r === lastServerTint.r && t.g === lastServerTint.g && t.b === lastServerTint.b) return;
+      lastServerTint = { r: t.r, g: t.g, b: t.b };
+      $('tint-r').value = t.r;
+      $('tint-g').value = t.g;
+      $('tint-b').value = t.b;
+      $('tint-r-val').textContent = (+t.r).toFixed(2);
+      $('tint-g-val').textContent = (+t.g).toFixed(2);
+      $('tint-b-val').textContent = (+t.b).toFixed(2);
     }
 
     // --- System actions ---
