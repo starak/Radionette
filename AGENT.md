@@ -10,7 +10,7 @@ Internet radio controller for Raspberry Pi 4 Model B. Reads physical radio dial 
   - Bits 0-7 (GPIO 18, 23, 24, 25, 5, 7, 12, 16): Channel selector — 15 unique positions across two banks
   - Bit 8 (GPIO 20): Bluetooth indicator
   - Bit 9 (GPIO 21): Power indicator
-  - Bit 10 (GPIO 19): Mono switch (HIGH = mono, LOW = stereo)
+  - Bit 10 (GPIO 19): Stereo switch (LOW = mono [default, fail-safe], HIGH = stereo). Bit is inverted in software so an open/disconnected switch defaults to mono.
 - **2 GPIO output pins** for indicator LEDs
   - GPIO 17: Power LED
   - GPIO 26: Bluetooth LED
@@ -151,7 +151,7 @@ The app runs as the `pi` user, which owns the PulseAudio session. `paplay` and `
 The audio module (`src/audio.ts`) provides mono/stereo switching via PulseAudio with dynamic per-sink remap:
 
 - **Per-sink remap:** Creates a `module-remap-sink` for **every** real sink (ALSA hardware + any Bluetooth sinks). Each remap-sink is named `mono_mix_<realSinkName>` and downmixes stereo L+R into mono with `channels=1 channel_map=mono remix=yes`
-- **GPIO-controlled:** BCM pin 19 with pull-down resistor. HIGH = mono, LOW = stereo (default)
+- **GPIO-controlled:** BCM pin 19 with pull-down resistor. Pin LOW = mono (default — fail-safe when switch is disconnected), HIGH = stereo. The bit is inverted in `gpio.ts` before being fed to `radioState.setMono()`.
 - **Dynamic BT sink handling:** Spawns `pactl subscribe` to watch PulseAudio events. When a new sink appears (e.g. Bluetooth device connects while mono is active), automatically creates a remap-sink for it and moves its streams
 - **Auto sink-input routing:** The subscribe watcher also detects new sink-inputs (e.g. mpg123 starts, BT audio arrives) and moves them to the corresponding mono remap-sink
 - **Live switching:** On `mono:on`, creates remap-sinks for all current sinks, sets the mono version of the default sink as the new default, and moves all active streams. On `mono:off`, moves streams back to real sinks, unloads all remap modules, restores the original default sink, and kills the subscribe watcher

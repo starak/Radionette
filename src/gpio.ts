@@ -12,7 +12,7 @@ try {
 }
 
 // GPIO pin assignments (BCM numbering)
-// Bits 0-7: channel selector, Bit 8: bluetooth, Bit 9: power, Bit 10: mono
+// Bits 0-7: channel selector, Bit 8: bluetooth, Bit 9: power, Bit 10: stereo (LOW = mono, default)
 const CHANNEL_PINS: readonly number[] = [18, 23, 24, 25, 5, 7, 12, 16]; // bits 0-7
 const BLUETOOTH_PIN = 20; // bit 8
 const POWER_PIN = 21; // bit 9
@@ -57,7 +57,10 @@ function processValue(rawValue: number): void {
   const channelBits = rawValue & 0xff; // bits 0-7
   const bluetoothBit = (rawValue >> 8) & 1; // bit 8
   const powerBit = (rawValue >> 9) & 1; // bit 9
-  const monoBit = (rawValue >> 10) & 1; // bit 10
+  // Bit 10 is inverted in software: pin LOW = mono (default — fail-safe if
+  // the switch is disconnected, broken, or in the "off" position), pin HIGH
+  // = stereo. The pull-down on MONO_PIN guarantees a known LOW when floating.
+  const monoBit = ((rawValue >> 10) & 1) ^ 1;
 
   radioState.setRawGpio(rawValue);
 

@@ -28,26 +28,26 @@ All input pins use internal pull-down resistors.
 
 ```
                       +---]+---+
-  1 6 12 14      3V3 =|  1   2 |= 5V
+                 3V3 =|  1   2 |= 5V
          (SDA)  GP02 =|  3   4 |= 5V
          (SCL)  GP03 =|  5   6 |= GND
                 GP04 =|  7   8 |= GP14 (TXD)
                  GND =|  9  10 |= GP15 (RXD)
-     [PWR LED]  GP17 =| 11  12 |= GP18 [CH BIT 0]      2
+     [PWR LED]  GP17 =| 11  12 |= GP18 [CH BIT 0]
                 GP27 =| 13  14 |= GND
-                GP22 =| 15  16 |= GP23 [CH BIT 1]      3
-                 3V3 =| 17  18 |= GP24 [CH BIT 2]      4
+                GP22 =| 15  16 |= GP23 [CH BIT 1]
+                 3V3 =| 17  18 |= GP24 [CH BIT 2]
         (MOSI)  GP10 =| 19  20 |= GND
-        (MISO)  GP09 =| 21  22 |= GP25 [CH BIT 3]      5
-        (SCLK)  GP11 =| 23  24 |= GP08 (SPI0 CE0)      7
-                 GND =| 25  26 |= GP07 [CH BIT 5]      8
-                 GP00 =| 27  28 |= GP01
-  [CH BIT 4]   GP05 =| 29  30 |= GND                 13
-                GP06 =| 31  32 |= GP12 [CH BIT 6]      9
+        (MISO)  GP09 =| 21  22 |= GP25 [CH BIT 3]
+        (SCLK)  GP11 =| 23  24 |= GP08 (SPI0 CE0) 
+                 GND =| 25  26 |= GP07 [CH BIT 5]
+                GP00 =| 27  28 |= GP01
+   [CH BIT 4]   GP05 =| 29  30 |= GND                 
+                GP06 =| 31  32 |= GP12 [CH BIT 6]
    [BACKLIGHT]  GP13 =| 33  34 |= GND
-        [MONO]  GP19 =| 35  36 |= GP16 [CH BIT 7]     10
-      [BT LED]  GP26 =| 37  38 |= GP20 [BLUETOOTH]    15
-                 GND =| 39  40 |= GP21 [POWER]        11
+      [STEREO]  GP19 =| 35  36 |= GP16 [CH BIT 7]
+      [BT LED]  GP26 =| 37  38 |= GP20 [BLUETOOTH]
+                 GND =| 39  40 |= GP21 [POWER]
                       +--------+
 ```
 
@@ -63,7 +63,7 @@ All input pins use internal pull-down resistors.
 | 16 | 36 | In | Channel bit 7 |
 | 20 | 38 | In | Bluetooth mode |
 | 21 | 40 | In | Power indicator |
-| 19 | 35 | In | Mono audio (HIGH = mono, LOW = stereo) |
+| 19 | 35 | In | Audio mode (LOW = mono [default], HIGH = stereo) |
 | 17 | 11 | Out | Power LED |
 | 26 | 37 | Out | Bluetooth LED |
 | 13 | 33 | Out | Display backlight (MOSFET gate) |
@@ -78,17 +78,17 @@ All input pins use internal pull-down resistors.
 Bare GC9A01 panel (14/15-pin variant). Backlight (LEDA) is switched by GPIO 13 through an N-channel MOSFET, so the panel goes dark when the radio is powered off.
 
 | Display pin | Display label | -> Pi BCM | -> Pi header pin |
-|---|---|---|---|
-| 1 | GND | GND | 6 (or 9, 14, 20, 25, 30, 34, 39) |
-| 2 | LEDK | GND | 9 |
-| 3 | LEDA | via MOSFET, gate = GPIO 13 | 33 (gate) / 17 or 1 (3V3 source) |
-| 4 | VDD | 3V3 | 1 |
-| 5 | D/C | GPIO 27 | 13 |
-| 6 | CS | GPIO 8 (CE0) | 24 |
-| 7 | SCL | GPIO 11 (SCLK) | 23 |
-| 8 | SDA | GPIO 10 (MOSI) | 19 |
-| 9 | RESET | GPIO 22 | 15 |
-| 10-15 | TP-* | (touch — leave open) | — |
+|---|---|---|------------------|
+| 1 | GND | GND | 39               |
+| 2 | LEDK | GND | 39               |
+| 3 | LEDA | GPIO 13 | 33               |
+| 4 | VDD | 3V3 | 1                |
+| 5 | D/C | GPIO 27 | 13               |
+| 6 | CS | GPIO 8 (CE0) | 24               |
+| 7 | SCL | GPIO 11 (SCLK) | 23               |
+| 8 | SDA | GPIO 10 (MOSI) | 19               |
+| 9 | RESET | GPIO 22 | 15               |
+| 10-15 | TP-* | (touch — leave open) | —                |
 
 **Backlight switching:** N-channel MOSFET (e.g. 2N7000, AO3400) — gate to GPIO 13 (Pi pin 33), source to GND, drain to LEDK; LEDA stays on 3V3. Alternatively a P-channel high-side switch on the LEDA rail. The `gpio.ts` module drives the gate HIGH when power is on and LOW when off.
 
