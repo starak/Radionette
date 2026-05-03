@@ -23,6 +23,8 @@ const ALL_INPUT_PINS = [...CHANNEL_PINS, BLUETOOTH_PIN, POWER_PIN, MONO_PIN];
 // Output pins — indicator lights
 const POWER_LED_PIN = 17;     // Power indicator light
 const BLUETOOTH_LED_PIN = 26; // Bluetooth indicator light
+const BACKLIGHT_PIN = 13;     // Display backlight (HIGH = on, LOW = off)
+                              // Wire LEDA via MOSFET gate, or LEDK→GND through transistor
 
 const POLL_INTERVAL_MS = 10;
 const DEBOUNCE_MS = 50;
@@ -88,6 +90,7 @@ function updateOutputs(power: boolean, bluetooth: boolean): void {
   if (!rpio) return;
   rpio.write(POWER_LED_PIN, power ? rpio.HIGH : rpio.LOW);
   rpio.write(BLUETOOTH_LED_PIN, bluetooth ? rpio.HIGH : rpio.LOW);
+  rpio.write(BACKLIGHT_PIN, power ? rpio.HIGH : rpio.LOW);
 }
 
 function poll(): void {
@@ -160,6 +163,8 @@ export function startGpio(): void {
   console.log(`[GPIO] Pin ${POWER_LED_PIN} ready (OUTPUT, Power LED)`);
   rpio.open(BLUETOOTH_LED_PIN, rpio.OUTPUT, rpio.LOW);
   console.log(`[GPIO] Pin ${BLUETOOTH_LED_PIN} ready (OUTPUT, Bluetooth LED)`);
+  rpio.open(BACKLIGHT_PIN, rpio.OUTPUT, rpio.LOW);
+  console.log(`[GPIO] Pin ${BACKLIGHT_PIN} ready (OUTPUT, Display Backlight)`);
 
   console.log("[GPIO] Starting poll loop...");
   pollTimer = setInterval(poll, POLL_INTERVAL_MS);
@@ -231,11 +236,13 @@ export function stopGpio(): void {
   console.log("[GPIO] Cleaning up pins...");
   rpio.write(POWER_LED_PIN, rpio.LOW);
   rpio.write(BLUETOOTH_LED_PIN, rpio.LOW);
+  rpio.write(BACKLIGHT_PIN, rpio.LOW);
 
   ALL_INPUT_PINS.forEach((pin) => {
     rpio.close(pin);
   });
   rpio.close(POWER_LED_PIN);
   rpio.close(BLUETOOTH_LED_PIN);
+  rpio.close(BACKLIGHT_PIN);
   console.log("[GPIO] Cleanup complete.");
 }

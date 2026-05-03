@@ -17,7 +17,7 @@ Internet radio controller for Raspberry Pi 4 Model B. Reads physical radio dial 
 - **GC9A01 1.28" 240x240 round IPS display** on SPI0
   - SPI0 CS=GPIO 8, SCLK=GPIO 11, MOSI=GPIO 10
   - D/C=GPIO 27, RESET=GPIO 22
-  - Backlight (LEDA/LEDK) wired to 3V3/GND (always on while Pi is powered)
+  - Backlight (LEDA) switched via GPIO 13 through a MOSFET — on when radio power is on, off when power is off
 - Audio output via 3.5mm jack or HDMI
 - **ADS1115 16-bit ADC** on I2C bus 1 (address 0x48) — reads volume potentiometer on channel A0
 
@@ -229,6 +229,7 @@ The hotspot alert module (`src/hotspot-alert.ts`) provides an audible notificati
 The display stack drives a Waveshare-style GC9A01 1.28" 240x240 round IPS panel via SPI0:
 
 - **Driver (`src/display.ts`):** Low-level SPI + GPIO. Uses `spi-device` for SPI (mode 0, 32 MHz, 4096-byte chunks) and `rpio` for D/C and RESET. Init sequence is the proven Waveshare variant (MADCTL=0x48, COLMOD=0x05, inversion ON, 50/50/150 ms reset pulse). `stopDisplay()` closes the GPIO pins with `rpio.PIN_PRESERVE` so the last frame stays visible after Node exits — this is critical, otherwise the panel blanks the moment the process dies.
+- **Backlight (`src/gpio.ts`):** GPIO 13 drives a MOSFET that switches the panel's LEDA rail. Driven HIGH when radio power is on, LOW when power is off — handled inside `updateOutputs()` so it follows the same code path as the power LED. Pin is opened OUTPUT/LOW at init and forced LOW + closed on shutdown.
 - **Render pipeline (`src/render/`):**
   - `frame.ts` — pure pixel-format helpers. Converts an RGBA8888 240x240 buffer to RGB565 big-endian (115200 bytes) suitable for `drawRgb565Buffer()`. Also `solidFrame(r,g,b)` for fallback paint.
   - `logos.ts` — loads PNG/GIF logos via `node-canvas` and `gifuct-js`. Each frame is composited onto a 240x240 canvas with a circular clip path (anything outside the circle stays black so the round panel corners look intentional), "contain"-fit and centred. Animated GIFs are decoded honouring disposal types (clear-to-bg, restore-previous) and per-frame delays. Result is cached in memory keyed by absolute path.

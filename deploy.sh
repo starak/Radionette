@@ -43,8 +43,8 @@ rsync -avz \
   "${REMOTE}:${REMOTE_DIR}/wifi-fallback.sh"
 ssh "${REMOTE}" "chmod +x ${REMOTE_DIR}/wifi-fallback.sh"
 
-echo "Installing dependencies on Pi..."
-ssh "${REMOTE}" "export NVM_DIR=\$HOME/.nvm; [ -s \$NVM_DIR/nvm.sh ] && . \$NVM_DIR/nvm.sh; cd ${REMOTE_DIR} && npm install --omit=dev && npm rebuild"
+#echo "Installing dependencies on Pi..."
+#ssh "${REMOTE}" "export NVM_DIR=\$HOME/.nvm; [ -s \$NVM_DIR/nvm.sh ] && . \$NVM_DIR/nvm.sh; cd ${REMOTE_DIR} && npm install --omit=dev && npm rebuild"
 
 echo "Restarting app via pm2..."
 ssh "${REMOTE}" "export NVM_DIR=\$HOME/.nvm; [ -s \$NVM_DIR/nvm.sh ] && . \$NVM_DIR/nvm.sh; pm2 restart radionette 2>/dev/null || pm2 start ${REMOTE_DIR}/dist/index.js --name radionette --cwd ${REMOTE_DIR}; pm2 save"
