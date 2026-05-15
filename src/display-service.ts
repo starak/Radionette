@@ -35,7 +35,7 @@ export interface DisplayServiceOptions {
   bluetoothConnectedLogo?: string;
 }
 
-const SPLASH_MS = 2000;
+const SPLASH_MS = 5000;
 
 let opts: Required<DisplayServiceOptions> | null = null;
 let splashTimer: NodeJS.Timeout | null = null;

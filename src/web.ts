@@ -7,6 +7,7 @@ import { getAllChannels } from "./channels";
 import { getWifiStatus, scanNetworks, connectToNetwork, resetWifiConfig, rebootSystem } from "./wifi";
 import { injectGpioValue, resetGpioOverride } from "./gpio";
 import { setLogoOverride, getLogoOverride, setDisplayTint, getDisplayTint } from "./display-service";
+import { setVolumeSoftware } from "./volume";
 
 const PORT = 8080;
 
@@ -167,6 +168,28 @@ export function startWebServer(): void {
       resetGpioOverride();
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ success: true }));
+      return;
+    }
+
+    if (req.url === "/api/debug/volume" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", async () => {
+        try {
+          const { volume } = JSON.parse(body);
+          if (typeof volume !== "number" || volume < 0 || volume > 100) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ success: false, error: "volume must be a number 0-100" }));
+            return;
+          }
+          await setVolumeSoftware(volume);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: true, volume }));
+        } catch (err: any) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: false, error: err.message || "Invalid JSON" }));
+        }
+      });
       return;
     }
 

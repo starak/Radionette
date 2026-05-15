@@ -386,6 +386,23 @@ export function initVolume(): void {
   );
 }
 
+/**
+ * Set volume from software (debug UI). Accepts a PA percentage (0-100).
+ * Bypasses the ADC/pot — the next pot movement will override this.
+ */
+export async function setVolumeSoftware(paPercent: number): Promise<void> {
+  const clamped = Math.max(0, Math.min(100, Math.round(paPercent)));
+  // Reverse the curve to find a knob% that produces this PA%, then set sinks
+  // For simplicity, just set sinks directly at the requested PA% and update state
+  radioState.setVolume(clamped);
+  const sinks = await listAllSinks();
+  const volArg = `${clamped}%`;
+  for (const sink of sinks) {
+    await pactl("set-sink-volume", sink, volArg);
+  }
+  console.log(`[Volume] Software override: ${clamped}%`);
+}
+
 export function stopVolume(): void {
   if (pollTimer) {
     clearInterval(pollTimer);

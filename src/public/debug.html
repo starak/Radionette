@@ -461,10 +461,8 @@
   <!-- Volume -->
   <div class="card">
     <h2>Volume</h2>
-    <div class="volume-row">
-      <div class="volume-bar-track">
-        <div class="volume-bar-fill" id="vol-bar"></div>
-      </div>
+    <div style="display:flex;align-items:center;gap:0.5rem;">
+      <input type="range" id="vol-slider" min="0" max="100" value="50" style="flex:1;" oninput="setVolume()">
       <span class="volume-pct" id="vol-pct">---%</span>
     </div>
   </div>
@@ -702,8 +700,8 @@
 
       // Volume bar
       const vol = s.volume != null ? s.volume : 0;
-      $('vol-bar').style.width = vol + '%';
       $('vol-pct').textContent = vol + '%';
+      $('vol-slider').value = vol;
 
       // Full state table
       const stateTable = $('state-table');
@@ -774,6 +772,18 @@
       const bankHw = bankLabelToHw[dial.bank] || 0;
       const subHw = subLabelToHw[dial.sub] || 0;
       return (dial.mono << 10) | (dial.power << 9) | (dial.bt << 8) | (bankHw << 4) | subHw;
+    }
+
+    async function setVolume() {
+      const vol = parseInt($('vol-slider').value, 10);
+      $('vol-pct').textContent = vol + '%';
+      try {
+        await fetch('/api/debug/volume', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ volume: vol })
+        });
+      } catch (e) { console.error('Failed to set volume', e); }
     }
 
     async function dialSet(field, value) {

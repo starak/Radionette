@@ -19,7 +19,7 @@
 
 import { radioState, RadioState } from "./state";
 
-const OFF_AFTER_MS = 10000; // 10 seconds
+const OFF_AFTER_MS = 20000; // 10 seconds
 
 let rpio: any = null;
 let pin: number = -1;
