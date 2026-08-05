@@ -246,8 +246,16 @@ function stopMonitor(): void {
   if (!btctlProcess) return;
   const proc = btctlProcess;
   btctlProcess = null;
+  // Swallow async EPIPE/EIO if the child already closed stdin — otherwise
+  // Node will treat the emitted "error" event as unhandled and crash.
+  proc.stdin?.on("error", () => {});
+  proc.on("error", () => {});
   try {
     proc.stdin?.write("quit\n");
+  } catch {
+    // already dead
+  }
+  try {
     proc.kill("SIGTERM");
   } catch {
     // already dead

@@ -18,6 +18,11 @@ import {
 const DISPLAY_DC_PIN = 27;
 const DISPLAY_RESET_PIN = 22;
 
+// Route warnings to stdout so pm2 keeps startup+status messages in the
+// same log file as normal output. Real errors still go to stderr via
+// console.error. Do this before console-stamp attaches its formatter.
+console.warn = console.log;
+
 consolestamp(console, { format: ":date(yyyy-mm-dd HH:MM:ss.l)" });
 
 console.log("=== Radionette ===");
