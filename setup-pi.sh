@@ -80,7 +80,38 @@ sudo apt-get install -y -qq \
   librsvg2-dev
 ok "System packages installed"
 
-# ---------- 2. Bluetooth device class ----------
+# ---------- 2. Enable SPI + I2C in /boot/firmware/config.txt ----------
+
+info "Enabling SPI and I2C in boot config..."
+
+# Prefer the current Pi OS path; fall back to the legacy location.
+if [ -f /boot/firmware/config.txt ]; then
+  BOOT_CONFIG=/boot/firmware/config.txt
+elif [ -f /boot/config.txt ]; then
+  BOOT_CONFIG=/boot/config.txt
+else
+  BOOT_CONFIG=""
+  warn "Could not find /boot/firmware/config.txt or /boot/config.txt — skipping SPI/I2C enable"
+fi
+
+REBOOT_NEEDED=0
+if [ -n "${BOOT_CONFIG}" ]; then
+  for PARAM in spi i2c_arm; do
+    if grep -qE "^\s*dtparam=${PARAM}=on\b" "${BOOT_CONFIG}"; then
+      ok "dtparam=${PARAM}=on already present in ${BOOT_CONFIG}"
+    elif grep -qE "^\s*#\s*dtparam=${PARAM}=on\b" "${BOOT_CONFIG}"; then
+      sudo sed -i "s|^\s*#\s*dtparam=${PARAM}=on|dtparam=${PARAM}=on|" "${BOOT_CONFIG}"
+      ok "Uncommented dtparam=${PARAM}=on in ${BOOT_CONFIG}"
+      REBOOT_NEEDED=1
+    else
+      echo "dtparam=${PARAM}=on" | sudo tee -a "${BOOT_CONFIG}" > /dev/null
+      ok "Appended dtparam=${PARAM}=on to ${BOOT_CONFIG}"
+      REBOOT_NEEDED=1
+    fi
+  done
+fi
+
+# ---------- 3. Bluetooth device class ----------
 
 info "Configuring Bluetooth device class (speaker icon)..."
 
@@ -108,13 +139,13 @@ else
   fi
 fi
 
-# ---------- 3. Create code directory ----------
+# ---------- 4. Create code directory ----------
 
 info "Creating ~/code directory..."
 mkdir -p ~/code
 ok "~/code exists"
 
-# ---------- 4. Install pm2 ----------
+# ---------- 5. Install pm2 ----------
 
 info "Installing pm2..."
 # Install as the pi user (not with sudo) — running pm2 as root tries to
@@ -122,7 +153,7 @@ info "Installing pm2..."
 npm install -g pm2
 ok "pm2 installed at ${NODE_BIN}/pm2"
 
-# ---------- 5. pm2 startup service ----------
+# ---------- 6. pm2 startup service ----------
 
 info "Installing pm2 systemd service..."
 
@@ -163,7 +194,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable "${PM2_SERVICE}"
 ok "${PM2_SERVICE} installed and enabled"
 
-# ---------- 6. Enable user linger ----------
+# ---------- 7. Enable user linger ----------
 
 info "Enabling user linger for ${CURRENT_USER}..."
 # User lingering ensures /run/user/<uid> is created at boot (before login).
@@ -172,7 +203,7 @@ info "Enabling user linger for ${CURRENT_USER}..."
 sudo loginctl enable-linger "${CURRENT_USER}"
 ok "User linger enabled for ${CURRENT_USER}"
 
-# ---------- 7. WiFi fallback hotspot service ----------
+# ---------- 8. WiFi fallback hotspot service ----------
 
 info "Installing wifi-fallback systemd service..."
 
@@ -212,4 +243,9 @@ echo ""
 echo "  Next steps:"
 echo "  1. From your dev machine, run: npm run deploy"
 echo "  2. Open http://radionette.local:8080/ in a browser to verify"
+if [ "${REBOOT_NEEDED}" = "1" ]; then
+  echo ""
+  warn "SPI and/or I2C were newly enabled — reboot the Pi before deploying:"
+  echo "     sudo reboot"
+fi
 echo ""
