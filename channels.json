@@ -54,9 +54,9 @@
       "logo": "NRK-Jazz.png"
     },
     "140": {
-      "name": "NRK Sport",
-      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/sport",
-      "logo": "NRK-Sport.png"
+      "name": "BBC Radio 1",
+      "url": "https://as-hls-ww-live.akamaized.net/pool_01505109/live/ww/bbc_radio_one/bbc_radio_one.isml/bbc_radio_one-audio%3d96000.norewind.m3u8",
+      "logo": "default.png"
     },
 
     "160": {
@@ -109,11 +109,6 @@
       "name": "Radio Norge",
       "url": "https://live-bauerno.sharp-stream.com/simulcast5_no.mp3",
       "logo": "radio-norge.png"
-    },
-    "205": {
-      "name": "BBC Radio 1",
-      "url": "https://as-hls-ww-live.akamaized.net/pool_01505109/live/ww/bbc_radio_one/bbc_radio_one.isml/bbc_radio_one-audio%3d96000.norewind.m3u8",
-      "logo": "default.png"
     }
   }
 }
