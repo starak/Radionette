@@ -173,12 +173,13 @@ function readADC(): number | null {
 /**
  * Convert raw ADC value to a percentage (0-100).
  * ADS1115 single-ended range: 0..32767 (positive only).
- * With PGA +/-4.096V and this pot, max raw is ~14300.
- * Inverted because pot wiring runs high-to-low.
+ * With PGA +/-4.096V and 3V3 across the pot, max raw is ~26400
+ * (3.3/4.096 * 32768). Inverted because pot wiring runs high-to-low.
  */
+const RAW_MAX = 26400;
 function rawToPercent(raw: number): number {
-  const clamped = Math.max(0, Math.min(14300, raw));
-  return 100 - Math.round((clamped / 14300) * 100);
+  const clamped = Math.max(0, Math.min(RAW_MAX, raw));
+  return 100 - Math.round((clamped / RAW_MAX) * 100);
 }
 
 /**
@@ -200,13 +201,16 @@ function smoothedPercent(raw: number): number {
 // ── PulseAudio volume control ──────────────────────────────────────────
 
 /**
- * Apply quadratic volume curve: knob percent → PulseAudio percent.
- * Human hearing is logarithmic, so a linear knob feels "too loud too fast".
- * Quadratic (x^2) spends more of the knob rotation in the quiet range:
- *   knob 25% → PA 6%, knob 50% → PA 25%, knob 75% → PA 56%, knob 100% → PA 100%
+ * Apply volume curve: knob percent → PulseAudio percent.
+ *
+ * Maps knob 1-100% linearly onto PA 20-100%. The amp's audible threshold
+ * sits around PA 15-20%, so any knob position above the click already
+ * produces sound. Knob 0% (click stop / power off) still maps to PA 0%.
  */
+const PA_FLOOR = 20;
 function applyCurve(knobPercent: number): number {
-  return Math.round((knobPercent * knobPercent) / 100);
+  if (knobPercent <= 0) return 0;
+  return Math.round(PA_FLOOR + (knobPercent * (100 - PA_FLOOR)) / 100);
 }
 
 /**
@@ -296,16 +300,14 @@ function pollADC(): void {
 
   const now = Date.now();
 
-  // Log raw changes (for debugging noisy pot), debounced to max 1/sec
+  // Track raw-value drift for potential debug logging. The actual log line
+  // is disabled; we still keep the tracking cheap so it's easy to re-enable.
   if (
-    (lastLoggedRaw === null ||
-      Math.abs(raw - lastLoggedRaw) >= LOG_THRESHOLD) &&
-    now - lastLogTime >= LOG_DEBOUNCE_MS
+    lastLoggedRaw === null ||
+    Math.abs(raw - lastLoggedRaw) >= LOG_THRESHOLD
   ) {
-    const instantPercent = rawToPercent(raw);
-    //console.log(`[Volume] ADC raw=${raw} (${instantPercent}%)`);
     lastLoggedRaw = raw;
-    lastLogTime = now;
+    // console.log(`[Volume] ADC raw=${raw} (${rawToPercent(raw)}%)`);
   }
 
   // Smooth and check if percent actually changed
@@ -315,7 +317,7 @@ function pollADC(): void {
     lastAppliedPercent === null ||
     Math.abs(percent - lastAppliedPercent) >= CHANGE_THRESHOLD
   ) {
-    // Debounce the "Setting volume" log too
+    // Debounce the "Setting volume" log so rapid pot movement doesn't spam.
     if (now - lastLogTime >= LOG_DEBOUNCE_MS) {
       console.log(`[Volume] Setting volume to ${applyCurve(percent)}% (knob ${percent}%)`);
       lastLogTime = now;

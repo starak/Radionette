@@ -166,9 +166,9 @@ The volume module (`src/volume.ts`) reads a potentiometer via an ADS1115 16-bit 
 - **Hardware:** ADS1115 on I2C bus 1 (`/dev/i2c-1`), address `0x48`, channel A0 (single-ended vs GND)
 - **I2C access:** Uses raw file I/O on `/dev/i2c-1` with the `ioctl` npm module to set the slave address (native addon, like `rpio`)
 - **ADC config:** Continuous mode, PGA +/-4.096V (FS), 128 SPS. Writes config register once at init, then reads conversion register every poll
-- **Pot calibration:** Raw range 0-14300 (pot only outputs ~0-1.8V). Wiring is inverted (high=off), corrected in software
-- **Smoothing:** 10-sample rolling average to tame noisy 70-year-old pot. Buffer pre-seeded at init to avoid ramp-up
-- **Volume control:** Sets PulseAudio volume on ALL sinks via `pactl set-sink-volume` when smoothed percent changes by >= 1%. Linear curve
+- **Pot calibration:** WH148 50 kΩ pot wired across full 3V3 rail, raw range 0-26400 (3.3/4.096 × 32768). Wiring is inverted (high=off), corrected in software
+- **Smoothing:** 10-sample rolling average to tame ADC/pot noise. Buffer pre-seeded at init to avoid ramp-up
+- **Volume control:** Sets PulseAudio volume on ALL sinks via `pactl set-sink-volume` when smoothed percent changes by >= 2%. Linear map from knob 1-100% onto PA 20-100% (floor prevents the bottom of the knob from sitting below the amp's audible threshold); knob 0% = PA 0%
 - **New sinks:** Re-applies volume on `mode:bluetooth` / `mode:radio` state events (covers BT connect/disconnect)
 - **State integration:** Calls `radioState.setVolume()` which emits `volume:change` + `state:change` (broadcast to web UI)
 - **Log debouncing:** Raw ADC and volume-set logs throttled to max 1/sec to reduce log spam
