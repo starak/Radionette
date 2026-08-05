@@ -1,8 +1,37 @@
 import { ChildProcess, spawn } from "child_process";
 import { radioState, ChannelInfo } from "./state";
 
-const PLAYER_CMD = "/usr/bin/mpg123";
-const PLAYER_ARGS = ["--long-tag", "-v"];
+// ── Player selection ───────────────────────────────────────────────────
+//
+// mpg123 is used for direct icecast MP3 streams (light, native ICY
+// metadata parsing). ffmpeg is used for HLS (.m3u8) — mpg123 cannot parse
+// the manifest or the AAC-in-MPEG-TS segments most HLS streams ship.
+// The two spawn signatures are different so we route on URL.
+
+const MPG123_CMD = "/usr/bin/mpg123";
+const MPG123_ARGS = ["--long-tag", "-v"];
+
+const FFMPEG_CMD = "/usr/bin/ffmpeg";
+// ffmpeg → PulseAudio directly. -nostdin so it doesn't compete for our
+// stdin. -loglevel info surfaces stream metadata; -hide_banner cuts the
+// startup noise. -reconnect_streamed 1 asks ffmpeg to recover from
+// transient CDN failures without dying.
+const FFMPEG_BASE_ARGS = [
+  "-nostdin",
+  "-hide_banner",
+  "-loglevel", "info",
+  "-reconnect", "1",
+  "-reconnect_streamed", "1",
+  "-reconnect_delay_max", "5",
+];
+const FFMPEG_OUT_ARGS = ["-f", "pulse", "radionette"];
+
+function isHlsUrl(url: string): boolean {
+  // Strip any query string before checking the extension. HLS manifests
+  // are almost always served as .m3u8 (and never as raw MP3).
+  const bare = url.split("?")[0].toLowerCase();
+  return bare.endsWith(".m3u8") || bare.includes(".m3u8/");
+}
 
 let playerProcess: ChildProcess | null = null;
 let currentUrl: string | null = null;
@@ -61,10 +90,17 @@ function killPlayer(): void {
 }
 
 function spawnPlayer(channel: ChannelInfo): void {
-  console.log(`[Player] Playing: ${channel.name} (${channel.url})`);
+  const hls = isHlsUrl(channel.url);
+  const kind = hls ? "ffmpeg (HLS)" : "mpg123";
+  console.log(`[Player] Playing: ${channel.name} via ${kind} (${channel.url})`);
   currentUrl = channel.url;
 
-  const proc = spawn(PLAYER_CMD, [...PLAYER_ARGS, channel.url], {
+  const cmd = hls ? FFMPEG_CMD : MPG123_CMD;
+  const args = hls
+    ? [...FFMPEG_BASE_ARGS, "-i", channel.url, ...FFMPEG_OUT_ARGS]
+    : [...MPG123_ARGS, channel.url];
+
+  const proc = spawn(cmd, args, {
     stdio: ["pipe", "pipe", "pipe"],
   });
 
@@ -167,6 +203,27 @@ function parseOutput(text: string): void {
   if (icyInfo && icyInfo[1]) {
     const metadata = icyInfo[1].replace(/^'|'$/g, "").trim();
     if (metadata) {
+      if (metadata !== lastMetadata) {
+        console.log(`[Player] Now playing: ${metadata}`);
+        lastMetadata = metadata;
+      }
+      radioState.setMetadata(metadata);
+    }
+    return;
+  }
+
+  // ffmpeg (HLS) — timed ID3 metadata surfaces as lines like:
+  //   [Parsed_showinfo] ... title: Artist - Song
+  //   Metadata update for StreamTitle: Artist - Song
+  //     title           : Artist - Song
+  // Match either the "StreamTitle:" form (from ffmpeg's -metadata_header)
+  // or an isolated "title           : <text>" line from stream metadata.
+  const ffTitle = text.match(
+    /StreamTitle\s*:\s*([^\r\n]+)|(?:^|\n)\s*title\s*:\s*([^\r\n]+)/i
+  );
+  if (ffTitle) {
+    const metadata = (ffTitle[1] || ffTitle[2] || "").trim();
+    if (metadata && metadata !== "N/A") {
       if (metadata !== lastMetadata) {
         console.log(`[Player] Now playing: ${metadata}`);
         lastMetadata = metadata;

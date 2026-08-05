@@ -64,6 +64,7 @@ info "Installing system packages..."
 sudo apt-get update -qq
 sudo apt-get install -y -qq \
   mpg123 \
+  ffmpeg \
   bluez \
   rfkill \
   pulseaudio \

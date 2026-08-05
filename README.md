@@ -132,7 +132,7 @@ The `setup-pi.sh` script handles everything: nvm, Node.js LTS, system packages, 
 npm run setup-pi
 ```
 
-This installs nvm and Node.js LTS, then installs `mpg123`, `bluez`, `rfkill`, `pulseaudio` (+ Bluetooth module), `build-essential`, and `python3`. It configures the Bluetooth device class for the speaker icon, installs pm2, sets up auto-start on boot, and installs the wifi-fallback systemd service.
+This installs nvm and Node.js LTS, then installs `mpg123`, `ffmpeg`, `bluez`, `rfkill`, `pulseaudio` (+ Bluetooth module), `i2c-tools`, `build-essential`, and `python3`. It enables SPI and I2C in `/boot/firmware/config.txt`, configures the Bluetooth device class for the speaker icon, installs pm2, sets up auto-start on boot, and installs the wifi-fallback systemd service.
 
 ### 4. First Deploy
 
@@ -219,6 +219,11 @@ The optional `logo` field is a filename (PNG or GIF) under `assets/channel-logos
 
 The channel number is composed of two nibbles: bits 7-4 select the bank, bits 3-0 select the sub-channel within the bank. See the debug page (`/debug`) for a visual breakdown.
 
+**Supported stream types:**
+
+- **Direct MP3 / icecast** (`https://.../stream.mp3`, icecast `/;` mount points) — played by `mpg123`. Fastest to start, native ICY metadata.
+- **HLS** (`https://.../playlist.m3u8`) — played by `ffmpeg` into PulseAudio directly. Supports AAC / HE-AAC / MP3 segments. The player picks the backend automatically based on the URL.
+
 ## Project Structure
 
 ```
@@ -228,7 +233,7 @@ radionette/
     state.ts          # Central state machine + event emitter
     gpio.ts           # GPIO polling, debounce, LED control
     channels.ts       # Channel lookup from channels.json
-    player.ts         # mpg123 child process management
+    player.ts         # mpg123 (MP3) / ffmpeg (HLS) child process management
     bluetooth.ts      # Bluetooth A2DP sink management
     audio.ts          # Mono/stereo mixing (PulseAudio remap-sink)
     wifi.ts           # WiFi scanning, connecting, hotspot (nmcli)

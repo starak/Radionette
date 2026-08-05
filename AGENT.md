@@ -48,7 +48,7 @@ Power ON + Bluetooth OFF
 | `src/state.ts` | Central state singleton + EventEmitter. All modules communicate through this. |
 | `src/gpio.ts` | Reads 11 input pins every 10ms, debounces (50ms), drives state machine, controls LED outputs. Falls back to dev mode when rpio unavailable. Exports `injectGpioValue()` for virtual dial API and `resetGpioOverride()` to revert to physical pins. |
 | `src/channels.ts` | Loads `channels.json` at startup. Looks up channel number -> name + URL. |
-| `src/player.ts` | Spawns/kills `/usr/bin/mpg123` child processes. Parses ICY stream metadata. Reacts to state events. Auto-retries with escalating backoff (5s, 10s, 30s) when stream fails and desired channel is still set. |
+| `src/player.ts` | Picks `/usr/bin/mpg123` (direct MP3/icecast) or `/usr/bin/ffmpeg` (HLS `.m3u8`) per URL and spawns/kills the chosen process. Parses ICY stream metadata (mpg123) and stream-title lines (ffmpeg). Reacts to state events. Auto-retries with escalating backoff (5s, 10s, 30s) when stream fails and desired channel is still set. |
 | `src/bluetooth.ts` | Full Bluetooth A2DP sink management — enable/disable adapter, pairing agent, device monitoring, volume boost, flap detection, auto-reconnect, notification sounds. |
 | `src/audio.ts` | Mono/stereo audio mixing via PulseAudio `module-remap-sink`. Creates per-sink remap-sinks for all real sinks (ALSA + BT). Spawns `pactl subscribe` to dynamically handle new BT sinks and new sink-inputs. Listens for `mono:on`/`mono:off` events from GPIO. |
 | `src/volume.ts` | Volume control via I2C ADS1115 ADC. Polls potentiometer every 100ms, applies 10-sample rolling average for smoothing, sets PulseAudio master volume on all sinks via `pactl set-sink-volume`. Re-applies volume on mode changes (BT connect/disconnect). Falls back to dev mode when `ioctl` module or `/dev/i2c-1` is unavailable. |
@@ -117,17 +117,23 @@ Add any HTTP/MP3 stream URL. No rebuild needed — just edit the file and restar
 
 ### Player Details
 
-The player module (`src/player.ts`) manages mpg123 child processes with serialized operations:
+The player module (`src/player.ts`) manages a stream-player child process with serialized operations. Two backends are supported and picked automatically per channel URL:
+
+- **mpg123** (`/usr/bin/mpg123`) — direct icecast MP3 streams. Light, native ICY metadata parsing.
+- **ffmpeg** (`/usr/bin/ffmpeg`) — HLS `.m3u8` streams (and anything else ffmpeg can demux). Decoded PCM is written directly to PulseAudio via `-f pulse "radionette"`. Enabled by URL detection: any URL whose path ends in or contains `.m3u8` routes to ffmpeg.
+
+Behaviour:
 
 - **Serialized play/stop:** All operations go through a promise chain (`pendingOperation`) to prevent overlapping spawns
-- **ICY metadata parsing:** Extracts `StreamTitle` from mpg123 stdout/stderr output
-- **Auto-retry on failure:** When mpg123 exits unexpectedly and `desiredChannel` is still set, retries with escalating backoff:
+- **Metadata parsing:** Extracts `StreamTitle` from mpg123 stdout/stderr (ICY tags) and from ffmpeg's stream metadata (`StreamTitle: ...` or `title: ...` lines) — all funneled through the same `radioState.setMetadata()` path
+- **Auto-retry on failure:** When the player exits unexpectedly and `desiredChannel` is still set, retries with escalating backoff:
   - Delays: 5s → 10s → 30s (caps at 30s for subsequent retries)
   - Retries are cancelled on explicit stop, power off, mode switch, or channel change
   - `retryCount` resets to 0 when a new channel is selected
+  - ffmpeg is additionally launched with `-reconnect_streamed 1 -reconnect_delay_max 5` so transient CDN hiccups are recovered inside the child process without a full respawn
 - **Playback resume after WiFi:** `state.ts` exposes `retryPlayback()` which re-emits `channel:change` if in radio mode with a channel selected but not playing. Called from `wifi.ts` after successful `connectToNetwork()`.
 
-Uses absolute path `/usr/bin/mpg123`.
+Uses absolute paths `/usr/bin/mpg123` and `/usr/bin/ffmpeg`.
 
 ### Bluetooth Details
 
@@ -319,7 +325,7 @@ The script requires the `pi` user and will fail otherwise. It auto-installs nvm 
 
 1. **Pi user check:** Fails if not running as `pi`
 2. **nvm + Node.js:** Installs nvm and Node.js LTS if not already present
-3. **System packages:** `mpg123`, `bluez`, `rfkill`, `pulseaudio` (+ bluetooth module), `build-essential`, `python3`
+3. **System packages:** `mpg123`, `ffmpeg`, `bluez`, `rfkill`, `pulseaudio` (+ bluetooth module), `i2c-tools`, `build-essential`, `python3`
 4. **Bluetooth device class:** Sets `Class = 0x240414` in `/etc/bluetooth/main.conf` (speaker icon)
 5. **pm2:** Installs via nvm (as pi user, not root), writes systemd service file directly (avoids `pm2 startup` which crashes with EIO errors)
 6. **Environment:** `XDG_RUNTIME_DIR` and `PM2_HOME` are set directly in the pm2 service file; user linger enabled for boot-time `/run/user/1000`
@@ -327,7 +333,8 @@ The script requires the `pi` user and will fail otherwise. It auto-installs nvm 
 
 | Package | Purpose |
 |---|---|
-| `mpg123` | Internet radio stream playback |
+| `mpg123` | Direct MP3 / icecast stream playback |
+| `ffmpeg` | HLS (`.m3u8`) stream playback and any non-MP3 codec that ships in a stream we want to add |
 | `bluez` | Bluetooth stack (`bluetoothctl`) |
 | `rfkill` | Block/unblock Bluetooth adapter |
 | `pulseaudio` | Audio routing |
