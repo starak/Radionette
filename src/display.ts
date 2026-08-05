@@ -1,14 +1,16 @@
 /**
  * GC9A01 240x240 round IPS display driver.
  *
- * 4-wire SPI. Pin map (BCM):
- *   D/C    GPIO 25 (header pin 22)
- *   RESET  GPIO 24 (header pin 18)
- *   CS     GPIO 8  (SPI0 CE0, kernel-managed)
- *   SCLK   GPIO 11 (SPI0)
- *   MOSI   GPIO 10 (SPI0)
+ * 4-wire SPI. Production pin map (BCM) — see README.md "Display Wiring":
+ *   D/C    GPIO 27 (header pin 13)
+ *   RESET  GPIO 22 (header pin 15)
+ *   CS     GPIO 8  (SPI0 CE0, kernel-managed, header pin 24)
+ *   SCLK   GPIO 11 (SPI0, kernel-managed, header pin 23)
+ *   MOSI   GPIO 10 (SPI0, kernel-managed, header pin 19)
  *
- * See DISPLAY_TEST_SPEC.md for wiring and bring-up procedure.
+ * The D/C and RESET pins are configurable via InitOptions — callers must
+ * pass the actual production values; the DEFAULT_DC_PIN/DEFAULT_RESET_PIN
+ * constants below are only sensible fallbacks for standalone smoke tests.
  */
 
 // rpio ships no types — declare a minimal subset of what we use.
@@ -35,8 +37,8 @@ import * as spiDevice from "spi-device";
 export const WIDTH = 240;
 export const HEIGHT = 240;
 
-const DEFAULT_DC_PIN = 25;
-const DEFAULT_RESET_PIN = 24;
+const DEFAULT_DC_PIN = 27;
+const DEFAULT_RESET_PIN = 22;
 
 const SPI_BUS = 0;
 const SPI_DEVICE = 0; // /dev/spidev0.0 (CE0)
