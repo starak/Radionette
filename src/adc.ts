@@ -225,6 +225,78 @@ export function isAdcReady(): boolean {
   return i2cFd !== null && deviceAddr !== null;
 }
 
+// ── Generic I2C helpers for OTHER devices on the same bus ──────────────
+//
+// The AS5600 also sits on /dev/i2c-1 (address 0x36). Rather than have it
+// open its own fd, the tuner reuses ours. These helpers let any caller
+// address an arbitrary slave, do a register write and a register read.
+
+/**
+ * Return true if a device at `addr` ACKs a zero-length write. Used to
+ * probe for optional devices (e.g. AS5600) without polluting the log
+ * with error output. Returns false if the ADC isn't open, ioctl fails,
+ * or the device doesn't respond.
+ */
+export function i2cProbe(addr: number): boolean {
+  if (i2cFd === null || !ioctl) return false;
+  try {
+    ioctl(i2cFd, I2C_SLAVE, addr);
+    currentSlave = addr;
+    // Zero-length write: some kernels accept this, some don't. Fall back
+    // to a 1-byte "point at register 0" write which every device tolerates.
+    writeSync(i2cFd, Buffer.from([0x00]));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Write bytes to a device on the bus. First byte is typically the
+ * register address, followed by data bytes. Returns true on success.
+ */
+export function i2cWriteTo(addr: number, bytes: Buffer | number[]): boolean {
+  if (i2cFd === null || !ioctl) return false;
+  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+  try {
+    ioctl(i2cFd, I2C_SLAVE, addr);
+    currentSlave = addr;
+    writeSync(i2cFd, buf);
+    return true;
+  } catch (err: any) {
+    console.error(
+      `[ADC] i2cWriteTo(0x${addr.toString(16)}) failed: ${err.message}`
+    );
+    return false;
+  }
+}
+
+/**
+ * Register-read pattern: write a single register-address byte, then
+ * read `length` bytes back. Returns the read bytes as a Buffer, or
+ * null on failure.
+ */
+export function i2cReadReg(
+  addr: number,
+  register: number,
+  length: number
+): Buffer | null {
+  if (i2cFd === null || !ioctl) return null;
+  try {
+    ioctl(i2cFd, I2C_SLAVE, addr);
+    currentSlave = addr;
+    writeSync(i2cFd, Buffer.from([register & 0xff]));
+    const buf = Buffer.alloc(length);
+    readSync(i2cFd, buf, 0, length, null);
+    return buf;
+  } catch (err: any) {
+    console.error(
+      `[ADC] i2cReadReg(0x${addr.toString(16)},0x${register.toString(16)}) failed: ${err.message}`
+    );
+    return null;
+  }
+}
+
 /**
  * Close the fd. Called from shutdown paths.
  */
