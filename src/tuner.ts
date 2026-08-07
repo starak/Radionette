@@ -1,18 +1,21 @@
 /**
- * AS5600 magnetic angle sensor → ADS1115 analog tuner.
+ * AS5600 magnetic angle sensor → I2C tuner.
  *
  * The AS5600 sits on the needle shaft (single 180° sweep, no multi-turn
- * ambiguity). Its OUT pin is a ratiometric analog voltage proportional
- * to the angle, wired into the ADS1115 AIN1 input. We reuse the shared
- * ADC service (adc.ts) which volume.ts already opened.
+ * ambiguity) and is read directly over I2C bus 1 at address 0x36. We
+ * share the ADS1115's file descriptor via the helpers in adc.ts.
  *
  * Responsibilities:
- *  - Poll AIN1 at TUNER_POLL_MS.
+ *  - Poll RAW_ANGLE at TUNER_POLL_MS.
  *  - Persist / restore the two-point calibration (raw min ↔ raw max
- *    corresponding to the mechanical stops of the needle).
- *  - Convert raw → smoothed fraction in [0,1] across the calibrated span.
+ *    corresponding to the mechanical stops of the needle) in 12-bit
+ *    angle counts (0..4095).
+ *  - Convert raw → smoothed fraction in [0,1] across the calibrated
+ *    span, handling wrap-around when the sweep straddles the 0/4095
+ *    boundary.
  *  - Combine fraction + current band nibble (from gpio.ts) to pick a
  *    concrete channel from channels.json and call radioState.setChannel.
+ *  - Monitor STATUS + AGC and log magnet-health transitions.
  *
  * Calibration file lives at ~/.radionette/tuner-calibration.json and is
  * only rewritten when the user hits the calibrate endpoints (no periodic
@@ -23,120 +26,81 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
-import {
-  ADC_MUX_AIN1,
-  isAdcReady,
-  readAdcChannel,
-  i2cProbe,
-  i2cReadReg,
-} from "./adc";
+import { isAdcReady, i2cProbe, i2cReadReg } from "./adc";
 import { channelsForBand } from "./channels";
 import { radioState, ChannelInfo } from "./state";
 
-// ── AS5600 I2C diagnostics (optional) ──────────────────────────────────
-//
-// The intended production wiring is analog-only: OUT → ADS1115 AIN1,
-// with SDA/SCL NOT connected once the AS5600 has been OTP-burned via
-// `src/scripts/as5600-burn.ts` to make analog its power-up default.
-//
-// If SDA/SCL happen to be connected (e.g. during initial bring-up or
-// while running the burn script), we take advantage of it and log
-// magnet health at boot so you can spot bad magnet placement without
-// a scope. When the chip isn't on the bus we stay silent.
+// ── AS5600 register map ────────────────────────────────────────────────
 
 const AS5600_ADDR = 0x36;
+
 const AS5600_REG_STATUS = 0x0b;
 const AS5600_REG_RAW_ANGLE = 0x0c;
 const AS5600_REG_AGC = 0x1a;
+const AS5600_REG_MAGNITUDE = 0x1b;
 
 const AS5600_STATUS_MD = 1 << 5; // magnet detected
 const AS5600_STATUS_ML = 1 << 4; // magnet too weak
 const AS5600_STATUS_MH = 1 << 3; // magnet too strong
 
-/**
- * Log magnet-health diagnostics if the AS5600 responds on I2C. Silent
- * no-op when the chip isn't wired to SDA/SCL (the intended production
- * state after the OTP burn).
- */
-function reportAs5600Health(): void {
-  if (!i2cProbe(AS5600_ADDR)) {
-    // Expected in production once SDA/SCL are removed — say nothing.
-    return;
-  }
-  const status = i2cReadReg(AS5600_ADDR, AS5600_REG_STATUS, 1);
-  if (!status) return;
-  const agc = i2cReadReg(AS5600_ADDR, AS5600_REG_AGC, 1);
-  const rawAngle = i2cReadReg(AS5600_ADDR, AS5600_REG_RAW_ANGLE, 2);
-
-  const md = !!(status[0] & AS5600_STATUS_MD);
-  const ml = !!(status[0] & AS5600_STATUS_ML);
-  const mh = !!(status[0] & AS5600_STATUS_MH);
-  const agcVal = agc ? agc[0] : NaN;
-  const rawAngleVal = rawAngle
-    ? ((rawAngle[0] << 8) | rawAngle[1]) & 0x0fff
-    : NaN;
-
-  const magnetLabel = md
-    ? mh
-      ? "TOO STRONG"
-      : ml
-      ? "TOO WEAK"
-      : "OK"
-    : "NOT DETECTED";
-  console.log(
-    `[Tuner] AS5600 present on I2C — magnet=${magnetLabel} AGC=${agcVal} rawAngle12bit=${rawAngleVal}`
-  );
-}
-
-// ── Constants ──────────────────────────────────────────────────────────
+// ── Tuning constants ───────────────────────────────────────────────────
 
 const TUNER_POLL_MS = 50;
 
-// Smoothing window for the raw ADC reading. At 50 ms poll, 6 samples =
-// 300 ms of low-pass filtering — invisible to the ear/eye, kills jitter.
+// Smoothing window for the raw angle reading. 6 samples * 50 ms = 300 ms
+// low-pass — invisible to the eye, kills any tiny sensor jitter.
 const SMOOTH_WINDOW = 6;
 
 // Fractional deadband before we consider the position "changed enough"
-// to reconsider which wedge the needle is in. Prevents flicker when the
-// needle sits near a wedge boundary. 0.008 == 0.8% of full sweep.
+// to reconsider which wedge the needle is in. 0.008 == 0.8% of full sweep.
 const FRACTION_HYSTERESIS = 0.008;
 
-// Additional wedge-boundary hysteresis: when the fraction crosses into
-// a new wedge, require it to be at least this much *inside* the new
-// wedge before we commit the change. Prevents rapid A↔B flicker at
-// exact boundaries. Fraction of the wedge width.
+// Additional wedge-boundary hysteresis: once committed to a channel,
+// require the fraction to be at least this much *inside* a different
+// wedge before we switch. Fraction of the wedge width.
 const WEDGE_ENTRY_HYSTERESIS = 0.20;
 
-// Fallback calibration if no file exists yet. Assumes AS5600 has been
-// glued in a random orientation and swept both stops on first boot —
-// which won't be true, so early behaviour will be "nothing works until
-// you calibrate". The debug UI provides Set Min / Set Max buttons.
-const DEFAULT_MIN_RAW = 0;
-const DEFAULT_MAX_RAW = 26400;
+// Magnet-health check every N polls (poll is 50 ms; every 20 = 1 s).
+const HEALTH_CHECK_INTERVAL = 20;
 
-const CALIB_FILE = path.join(os.homedir(), ".radionette", "tuner-calibration.json");
+// Default calibration if no file exists yet. In 12-bit angle counts
+// (0..4095). Assumes the sweep straddles the wrap at 0/4095, which is
+// what the earlier monitor session showed (1955 → 4067). The debug UI
+// provides Set Min / Set Max buttons.
+const DEFAULT_MIN_ANGLE = 1955;
+const DEFAULT_MAX_ANGLE = 4067;
+
+const CALIB_FILE = path.join(
+  os.homedir(),
+  ".radionette",
+  "tuner-calibration.json"
+);
 
 // ── State ──────────────────────────────────────────────────────────────
 
 interface Calibration {
-  minRaw: number;
-  maxRaw: number;
+  /** 12-bit angle count at the "0%" mechanical stop (CCW end by default) */
+  minAngle: number;
+  /** 12-bit angle count at the "100%" mechanical stop (CW end by default) */
+  maxAngle: number;
   /**
-   * If true, the fraction is inverted (1 - f) before use. Handy for
-   * cases where the AS5600 DIR pin ended up wired to the opposite
-   * polarity of what the software expects.
+   * If true, the fraction is inverted (1 - f) before use. Handy when
+   * the AS5600 DIR pin ended up producing the opposite polarity of
+   * what feels natural for the physical needle.
    */
   invert: boolean;
 }
 
 let calib: Calibration = {
-  minRaw: DEFAULT_MIN_RAW,
-  maxRaw: DEFAULT_MAX_RAW,
+  minAngle: DEFAULT_MIN_ANGLE,
+  maxAngle: DEFAULT_MAX_ANGLE,
   invert: false,
 };
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let devMode = false;
+let sensorPresent = false;
+let pollTick = 0;
 
 const rawHistory: number[] = [];
 
@@ -146,6 +110,9 @@ let lastCommittedFraction: number | null = null;
 // Current band nibble, updated by gpio.ts via setTunerBand().
 let currentBand = 0;
 
+// Magnet-health hysteresis — only log transitions, not every poll.
+let lastMagnetLabel: string | null = null;
+
 // ── Helpers ────────────────────────────────────────────────────────────
 
 function ensureCalibDir(): void {
@@ -153,26 +120,37 @@ function ensureCalibDir(): void {
   try {
     fs.mkdirSync(dir, { recursive: true });
   } catch {
-    // ignore — file write will surface any real error
+    // ignore
   }
 }
 
 function loadCalibration(): void {
   try {
     const raw = fs.readFileSync(CALIB_FILE, "utf-8");
-    const parsed = JSON.parse(raw) as Partial<Calibration>;
+    const parsed = JSON.parse(raw) as Partial<Calibration> & {
+      // Backwards compat with older ADC-based calibration
+      minRaw?: number;
+      maxRaw?: number;
+    };
+    // Prefer new field names; fall back to legacy names if present
+    const minAngle =
+      typeof parsed.minAngle === "number" ? parsed.minAngle : parsed.minRaw;
+    const maxAngle =
+      typeof parsed.maxAngle === "number" ? parsed.maxAngle : parsed.maxRaw;
     if (
-      typeof parsed.minRaw === "number" &&
-      typeof parsed.maxRaw === "number" &&
-      parsed.minRaw !== parsed.maxRaw
+      typeof minAngle === "number" &&
+      typeof maxAngle === "number" &&
+      minAngle !== maxAngle &&
+      minAngle >= 0 &&
+      maxAngle >= 0
     ) {
       calib = {
-        minRaw: parsed.minRaw,
-        maxRaw: parsed.maxRaw,
+        minAngle,
+        maxAngle,
         invert: !!parsed.invert,
       };
       console.log(
-        `[Tuner] Loaded calibration: minRaw=${calib.minRaw} maxRaw=${calib.maxRaw} invert=${calib.invert}`
+        `[Tuner] Loaded calibration: minAngle=${calib.minAngle} maxAngle=${calib.maxAngle} invert=${calib.invert}`
       );
       return;
     }
@@ -182,7 +160,7 @@ function loadCalibration(): void {
       console.log(`[Tuner] Could not read calibration file: ${err.message}`);
     }
     console.log(
-      `[Tuner] Using default calibration (minRaw=${calib.minRaw} maxRaw=${calib.maxRaw}). Calibrate via the debug UI.`
+      `[Tuner] Using default calibration (minAngle=${calib.minAngle} maxAngle=${calib.maxAngle}). Calibrate via the debug UI.`
     );
   }
 }
@@ -192,29 +170,82 @@ function saveCalibration(): void {
   try {
     fs.writeFileSync(CALIB_FILE, JSON.stringify(calib, null, 2), "utf-8");
     console.log(
-      `[Tuner] Saved calibration: minRaw=${calib.minRaw} maxRaw=${calib.maxRaw} invert=${calib.invert}`
+      `[Tuner] Saved calibration: minAngle=${calib.minAngle} maxAngle=${calib.maxAngle} invert=${calib.invert}`
     );
   } catch (err: any) {
     console.error(`[Tuner] Failed to write calibration file: ${err.message}`);
   }
 }
 
-function smooth(raw: number): number {
-  rawHistory.push(raw);
-  if (rawHistory.length > SMOOTH_WINDOW) rawHistory.shift();
-  const sum = rawHistory.reduce((a, b) => a + b, 0);
-  return sum / rawHistory.length;
+/**
+ * Read the AS5600's 12-bit RAW_ANGLE register. Returns null on failure
+ * or when the sensor isn't on the bus.
+ */
+function readAngle(): number | null {
+  if (!sensorPresent) return null;
+  const buf = i2cReadReg(AS5600_ADDR, AS5600_REG_RAW_ANGLE, 2);
+  if (!buf) return null;
+  return ((buf[0] << 8) | buf[1]) & 0x0fff;
 }
 
-function rawToFraction(raw: number): number {
-  const { minRaw, maxRaw, invert } = calib;
-  if (maxRaw === minRaw) return 0;
-  const rawSpan = maxRaw - minRaw;
-  // Support inverted calibration (maxRaw < minRaw) by allowing negative
-  // rawSpan too — clamp on either side after normalizing.
-  const t = (raw - minRaw) / rawSpan;
-  const bounded = Math.max(0, Math.min(1, t));
-  return invert ? 1 - bounded : bounded;
+/**
+ * Compute a smoothed angle in the RAW_ANGLE space (0..4095). Handles
+ * the wrap point by unwrapping raw readings that straddle 0/4095
+ * before averaging — otherwise a shaft sitting at 4090 would produce
+ * a smoothed mean of ~2000 when the buffer briefly saw 10.
+ */
+function smoothAngle(raw: number): number {
+  rawHistory.push(raw);
+  if (rawHistory.length > SMOOTH_WINDOW) rawHistory.shift();
+  if (rawHistory.length === 1) return raw;
+
+  // Unwrap relative to the first sample. Anything more than 2048 apart
+  // is treated as "on the other side of the wrap point" and shifted.
+  const ref = rawHistory[0];
+  let sum = 0;
+  for (const v of rawHistory) {
+    let d = v - ref;
+    if (d > 2048) d -= 4096;
+    else if (d < -2048) d += 4096;
+    sum += ref + d;
+  }
+  const avg = sum / rawHistory.length;
+  // Re-wrap into [0, 4095]
+  return ((avg % 4096) + 4096) % 4096;
+}
+
+/**
+ * Convert a smoothed 12-bit angle (0..4095) into a fraction in [0,1]
+ * across the calibrated sweep. Correctly handles the case where the
+ * sweep straddles the 0/4095 wrap point (calibration min > max in
+ * angle terms).
+ */
+function angleToFraction(angle: number): number {
+  const { minAngle, maxAngle, invert } = calib;
+
+  // Signed angular distance from minAngle around the short arc.
+  const arcTo = (target: number): number => {
+    let d = target - minAngle;
+    if (d < 0) d += 4096;
+    return d;
+  };
+
+  const total = arcTo(maxAngle);
+  if (total === 0) return 0;
+
+  let t = arcTo(angle) / total;
+  // If the angle is outside the calibrated arc, clamp to whichever end
+  // it's closer to. Anything past maxAngle in the forward direction
+  // stays at 1; anything behind minAngle stays at 0.
+  if (t > 1) {
+    // Check whether we're on the "wrap around the other side" region
+    // — if so, decide 0 or 1 based on which end is closer.
+    const distToMin = 4096 - arcTo(angle); // distance going backwards
+    const distToMax = arcTo(angle) - total; // distance going forwards
+    t = distToMax < distToMin ? 1 : 0;
+  }
+  if (t < 0) t = 0;
+  return invert ? 1 - t : t;
 }
 
 /**
@@ -239,8 +270,7 @@ function pickChannelFromFraction(
 /**
  * Apply wedge-boundary hysteresis: once we've committed to a channel,
  * require the fraction to be at least WEDGE_ENTRY_HYSTERESIS *inside*
- * a different wedge before we switch. Returns the chosen channel or
- * null if there's no station in the current band.
+ * a different wedge before we switch.
  */
 function pickChannelWithHysteresis(
   fraction: number,
@@ -249,35 +279,22 @@ function pickChannelWithHysteresis(
   const naive = pickChannelFromFraction(fraction, channels);
   if (!naive) return null;
   if (lastAppliedChannelNumber === null) return naive;
-
-  // If naive pick already matches the currently committed channel,
-  // nothing to do — no boundary to worry about.
   if (naive.number === lastAppliedChannelNumber) return naive;
 
-  // We're crossing a boundary. Check how deep into the new wedge we are.
   const wedgeWidth = 1 / channels.length;
   const naiveIdx = channels.indexOf(naive);
   const wedgeStart = naiveIdx * wedgeWidth;
   const depthIntoWedge = (fraction - wedgeStart) / wedgeWidth;
 
-  // Direction of travel: are we moving up (into a higher-index wedge) or
-  // down? Use naive's index vs current committed index to know.
   const currentIdx = channels.findIndex(
     (c) => c.number === lastAppliedChannelNumber
   );
   if (currentIdx < 0) return naive;
 
-  let inside: number;
-  if (naiveIdx > currentIdx) {
-    // Moving up — depth measures from the low edge of the new wedge
-    inside = depthIntoWedge;
-  } else {
-    // Moving down — depth measures from the high edge of the new wedge
-    inside = 1 - depthIntoWedge;
-  }
+  const inside =
+    naiveIdx > currentIdx ? depthIntoWedge : 1 - depthIntoWedge;
 
   if (inside < WEDGE_ENTRY_HYSTERESIS) {
-    // Not deep enough into the new wedge — stay on the current channel
     const current = channels.find(
       (c) => c.number === lastAppliedChannelNumber
     );
@@ -286,22 +303,47 @@ function pickChannelWithHysteresis(
   return naive;
 }
 
+/**
+ * Read STATUS + AGC and log any transition (e.g. magnet lost). Skipped
+ * on most polls; runs once per HEALTH_CHECK_INTERVAL to keep the I2C
+ * bus quiet during normal operation.
+ */
+function checkMagnetHealth(): void {
+  const status = i2cReadReg(AS5600_ADDR, AS5600_REG_STATUS, 1);
+  if (!status) return;
+  const md = !!(status[0] & AS5600_STATUS_MD);
+  const ml = !!(status[0] & AS5600_STATUS_ML);
+  const mh = !!(status[0] & AS5600_STATUS_MH);
+  const label = !md ? "NOT DETECTED" : mh ? "TOO STRONG" : ml ? "TOO WEAK" : "OK";
+  if (label !== lastMagnetLabel) {
+    if (lastMagnetLabel !== null) {
+      const agc = i2cReadReg(AS5600_ADDR, AS5600_REG_AGC, 1);
+      const agcVal = agc ? agc[0] : NaN;
+      console.log(
+        `[Tuner] AS5600 magnet ${lastMagnetLabel} → ${label} (AGC=${agcVal})`
+      );
+    }
+    lastMagnetLabel = label;
+  }
+}
+
 // ── Poll loop ──────────────────────────────────────────────────────────
 
 function pollTuner(): void {
-  const raw = readAdcChannel(ADC_MUX_AIN1);
+  pollTick = (pollTick + 1) % HEALTH_CHECK_INTERVAL;
+  if (pollTick === 0) checkMagnetHealth();
+
+  const raw = readAngle();
   if (raw === null) return;
 
-  const smoothed = smooth(raw);
-  const fraction = rawToFraction(smoothed);
+  const smoothed = smoothAngle(raw);
+  const fraction = angleToFraction(smoothed);
 
   // Broadcast the live fraction to the web UI regardless of whether the
-  // channel actually changes — the debug page uses this to move a needle.
+  // channel actually changes.
   radioState.setTuner(fraction, Math.round(smoothed), currentBand);
 
   // Wait for the smoothing buffer to fill before committing to a channel.
-  // Prevents a burst of channel changes at boot while successive-different
-  // raw reads propagate through the average.
   if (rawHistory.length < SMOOTH_WINDOW) return;
 
   // Only reconsider the channel selection if the fraction moved enough.
@@ -318,8 +360,7 @@ function pollTuner(): void {
 
   if (pick.number !== lastAppliedChannelNumber) {
     // Only log the "picked channel" line when the radio is actually in a
-    // state where the choice matters. During power-off / bluetooth mode
-    // setChannel() is a no-op and we'd just be spamming the log.
+    // state where the choice matters.
     if (radioState.state.mode === "radio" && radioState.state.power) {
       console.log(
         `[Tuner] band=${currentBand.toString(16)} fraction=${fraction.toFixed(
@@ -337,34 +378,28 @@ function pollTuner(): void {
 
 /**
  * Update the current band nibble. Called from gpio.ts whenever the top
- * nibble of the channel selector switch changes. Forces a re-evaluation
- * of the current channel so switching bands takes effect immediately.
+ * nibble of the channel selector switch changes.
  */
 export function setTunerBand(nibble: number): void {
   const masked = nibble & 0x0f;
   if (masked === currentBand) return;
   currentBand = masked;
-  // Force re-pick on next poll: clear the committed channel so hysteresis
-  // doesn't hold us on a station that no longer exists in this band.
   lastAppliedChannelNumber = null;
   lastCommittedFraction = null;
 }
 
 /**
- * Capture the current raw reading as the min or max calibration point.
- * Called from the debug endpoints when the user has the needle at a
- * mechanical stop.
+ * Capture the current angle reading as the min or max calibration point.
  */
 export function calibrateTuner(kind: "min" | "max"): number | null {
-  const raw = readAdcChannel(ADC_MUX_AIN1);
+  const raw = readAngle();
   if (raw === null) return null;
   if (kind === "min") {
-    calib.minRaw = raw;
+    calib.minAngle = raw;
   } else {
-    calib.maxRaw = raw;
+    calib.maxAngle = raw;
   }
   saveCalibration();
-  // Reset history so the next reading isn't biased by the sample at the stop.
   rawHistory.length = 0;
   lastAppliedChannelNumber = null;
   lastCommittedFraction = null;
@@ -372,8 +407,7 @@ export function calibrateTuner(kind: "min" | "max"): number | null {
 }
 
 /**
- * Toggle the "invert" flag in calibration. Useful when the AS5600 DIR
- * pin ended up producing the wrong polarity for our software.
+ * Toggle the "invert" flag in calibration.
  */
 export function invertTuner(invert: boolean): void {
   if (calib.invert === invert) return;
@@ -388,16 +422,23 @@ export function invertTuner(invert: boolean): void {
  */
 export function tunerStatus(): {
   ready: boolean;
-  calibration: Calibration;
+  calibration: Calibration & { minRaw?: number; maxRaw?: number };
   latestRaw: number | null;
   fraction: number | null;
   band: number;
   channelsInBand: Array<{ number: number; name: string }>;
 } {
   const channels = channelsForBand(currentBand);
+  // Include legacy minRaw/maxRaw aliases so any existing debug UI or
+  // status consumers keep rendering.
+  const cal = {
+    ...calib,
+    minRaw: calib.minAngle,
+    maxRaw: calib.maxAngle,
+  };
   return {
-    ready: !devMode && isAdcReady(),
-    calibration: { ...calib },
+    ready: !devMode && sensorPresent,
+    calibration: cal,
     latestRaw: radioState.state.tunerRaw,
     fraction: radioState.state.tunerFraction,
     band: currentBand,
@@ -406,48 +447,72 @@ export function tunerStatus(): {
 }
 
 /**
- * True if the tuner is running (ADC available, poll loop started). Used
- * by gpio.ts to decide whether to fall back to the old bit-decoded
- * channel selection.
+ * True if the tuner is running (sensor present, poll loop started).
  */
 export function isTunerActive(): boolean {
-  return !devMode && pollTimer !== null;
+  return !devMode && pollTimer !== null && sensorPresent;
 }
 
 export function initTuner(): void {
   if (!isAdcReady()) {
     devMode = true;
-    console.log("[Tuner] ADC not available — running in dev mode");
+    console.log("[Tuner] I2C not available — running in dev mode");
     return;
   }
 
   loadCalibration();
 
-  // If SDA/SCL happen to be connected, log AS5600 magnet health for
-  // diagnostics. In production the AS5600 is analog-only (SDA/SCL not
-  // wired) after the OTP burn, so this is silent.
-  reportAs5600Health();
+  // Probe the AS5600 and read once. If the chip isn't on the bus we
+  // silently disable the tuner so gpio.ts falls back to the classic
+  // full-8-bit channel lookup.
+  if (!i2cProbe(AS5600_ADDR)) {
+    console.log(
+      "[Tuner] AS5600 not found at 0x36 — falling back to classic GPIO channel lookup"
+    );
+    devMode = true;
+    return;
+  }
+  console.log("[Tuner] AS5600 found at 0x36");
+  sensorPresent = true;
 
-  // Prime with a single read so state has a value at boot, but do NOT
-  // pre-fill the smoothing buffer. That way the buffer-full gate in
-  // pollTuner() waits for real successive reads before the tuner can
-  // commit a channel change — this suppresses a boot-time sweep of
-  // several channels while the initial reading (potentially taken while
-  // the ADS1115 mux was still settling) is diluted out.
-  const initial = readAdcChannel(ADC_MUX_AIN1);
+  // Initial magnet-health snapshot
+  const status = i2cReadReg(AS5600_ADDR, AS5600_REG_STATUS, 1);
+  const agc = i2cReadReg(AS5600_ADDR, AS5600_REG_AGC, 1);
+  const magnitude = i2cReadReg(AS5600_ADDR, AS5600_REG_MAGNITUDE, 2);
+  if (status) {
+    const md = !!(status[0] & AS5600_STATUS_MD);
+    const ml = !!(status[0] & AS5600_STATUS_ML);
+    const mh = !!(status[0] & AS5600_STATUS_MH);
+    lastMagnetLabel = !md
+      ? "NOT DETECTED"
+      : mh
+      ? "TOO STRONG"
+      : ml
+      ? "TOO WEAK"
+      : "OK";
+    const agcVal = agc ? agc[0] : NaN;
+    const magVal = magnitude
+      ? ((magnitude[0] << 8) | magnitude[1]) & 0x0fff
+      : NaN;
+    console.log(
+      `[Tuner] Magnet=${lastMagnetLabel} AGC=${agcVal} magnitude=${magVal}`
+    );
+  }
+
+  const initial = readAngle();
   if (initial !== null) {
-    const fraction = rawToFraction(initial);
+    const fraction = angleToFraction(initial);
     radioState.setTuner(fraction, initial, currentBand);
     console.log(
-      `[Tuner] Initial reading: raw=${initial} fraction=${fraction.toFixed(3)}`
+      `[Tuner] Initial angle: raw=${initial} fraction=${fraction.toFixed(3)}`
     );
   } else {
-    console.log("[Tuner] Initial AIN1 read failed — polling anyway");
+    console.log("[Tuner] Initial angle read failed — polling anyway");
   }
 
   pollTimer = setInterval(pollTuner, TUNER_POLL_MS);
   console.log(
-    `[Tuner] Polling AIN1 every ${TUNER_POLL_MS}ms, smoothing window=${SMOOTH_WINDOW}`
+    `[Tuner] Polling AS5600 every ${TUNER_POLL_MS}ms, smoothing window=${SMOOTH_WINDOW}`
   );
 }
 
@@ -456,6 +521,7 @@ export function stopTuner(): void {
     clearInterval(pollTimer);
     pollTimer = null;
   }
+  sensorPresent = false;
   if (!devMode) {
     console.log("[Tuner] Stopped");
   }

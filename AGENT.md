@@ -53,7 +53,7 @@ Power ON + Bluetooth OFF
 | `src/audio.ts` | Mono/stereo audio mixing via PulseAudio `module-remap-sink`. Creates per-sink remap-sinks for all real sinks (ALSA + BT). Spawns `pactl subscribe` to dynamically handle new BT sinks and new sink-inputs. Listens for `mono:on`/`mono:off` events from GPIO. |
 | `src/adc.ts` | Shared ADS1115 service on `/dev/i2c-1`. Opens the fd once at boot, offers `readAdcChannel(mux)` for callers to read AIN0..AIN3 in single-shot mode. Consumed by `volume.ts` (AIN0) and `tuner.ts` (AIN1). |
 | `src/volume.ts` | Volume control. Reads AIN0 via `adc.ts` every 100 ms, applies a 10-sample rolling average, maps knob 1-100% onto PulseAudio 20-100% (bottom-floor to sit above the amp's audible threshold). Falls back to dev mode when the ADC isn't available. |
-| `src/tuner.ts` | AS5600 magnetic angle sensor in analog mode via ADS1115 AIN1. Polls every 50 ms, smooths to a fraction 0..1 across the calibrated sweep, combines with the current band nibble from `gpio.ts` to pick a channel from `channels.json` via `channelsForBand()`. Two-point calibration persisted to `~/.radionette/tuner-calibration.json`; `invert` flag for reversed rotation. Falls back silently when the ADC isn't available. |
+| `src/tuner.ts` | AS5600 magnetic angle sensor read directly over I2C at 0x36 (shares the ADS1115 bus). Polls RAW_ANGLE every 50 ms, smooths with wrap-aware unwrapping, converts to a fraction 0..1 across the calibrated sweep, combines with the current band nibble from `gpio.ts` to pick a channel from `channels.json` via `channelsForBand()`. Two-point calibration in 12-bit angle counts persisted to `~/.radionette/tuner-calibration.json`; `invert` flag for reversed rotation. Monitors STATUS + AGC and logs magnet-health transitions. Falls back silently when the sensor isn't on the bus. |
 | `src/web.ts` | HTTP server (port 8080) + WebSocket. Serves status page, WiFi settings page, and WiFi API endpoints. System management endpoints (WiFi reset, reboot). Tuner endpoints (`GET /api/tuner`, `POST /api/tuner/calibrate`, `POST /api/tuner/invert`). Pushes live state to all connected clients. |
 | `src/wifi.ts` | WiFi management via `nmcli` — scan for networks, connect (triggers playback retry on success), start/stop hotspot, hotspot detection, WiFi reset, system reboot. Write operations use `sudo nmcli`. Falls back to mock data in dev mode. |
 | `src/hotspot-alert.ts` | Periodic bleep alert when hotspot is active in radio mode. Uses `aplay` (ALSA) for early-boot compatibility before PulseAudio starts. Polls hotspot status every 5s, loops `hotspot-bleep.wav` via aplay. |
@@ -196,26 +196,21 @@ Both `volume.ts` and `tuner.ts` read different single-ended channels on the same
 
 ### Tuner Details
 
-The tuner module (`src/tuner.ts`) uses an **AS5600** magnetic angle sensor glued to the needle shaft, wired in analog mode: `OUT` → ADS1115 `AIN1`. The needle sweeps 180°, so the AS5600 delivers a linear voltage covering roughly half its full 0-VDD range. The chip has no multi-turn ambiguity because we never leave one revolution.
+The tuner module (`src/tuner.ts`) uses an **AS5600** magnetic angle sensor on the needle shaft, read directly over I2C bus 1 at address 0x36. Both the ADS1115 (0x48) and the AS5600 (0x36) share SDA/SCL. The AS5600's analog OUT pin is unused; we read RAW_ANGLE (register 0x0C, 12-bit) over I2C every 50 ms. The chip has no multi-turn ambiguity because we never leave one revolution.
 
 - **Poll interval:** 50 ms (`TUNER_POLL_MS`)
-- **Smoothing:** 6-sample rolling mean of raw ADC (300 ms window)
-- **Calibration:** two-point (min raw ↔ max raw) captured via `POST /api/tuner/calibrate {kind:"min"|"max"}`, persisted to `~/.radionette/tuner-calibration.json`. An `invert` flag flips the resulting fraction for cases where the AS5600 DIR pin ended up wired the wrong way.
+- **Smoothing:** 6-sample rolling mean of the 12-bit angle (300 ms window). The smoother unwraps readings that straddle the 0/4095 boundary before averaging.
+- **Calibration:** two-point (min angle ↔ max angle) captured via `POST /api/tuner/calibrate {kind:"min"|"max"}`, persisted to `~/.radionette/tuner-calibration.json` as `{minAngle, maxAngle, invert}` in 12-bit angle counts. `angleToFraction()` handles calibrations where the sweep straddles the wrap point (min > max in raw terms).
 - **Fraction → channel:** the current band nibble (top 4 bits of the classic 8-bit channel switch) is passed in from `gpio.ts` via `setTunerBand()`. The list of channels whose top nibble matches becomes the wedge layout; the fraction picks a wedge with two layers of hysteresis (fractional deadband + wedge-entry hysteresis) to prevent flicker at boundaries.
-- **State broadcast:** every poll pushes `tunerFraction`, `tunerRaw` and `tunerBand` into `radioState`; the debug page renders a live 180° needle with wedge markers per band.
-- **Fallback:** `isTunerActive()` returns false when the ADC isn't available. In that state `gpio.ts` falls back to the classic `lookupChannel(rawGpio & 0xFF)` path so the radio still works without an AS5600.
+- **Magnet health:** once per second the tuner reads STATUS (MD/ML/MH) and logs any transition (`OK` ↔ `TOO WEAK` / `TOO STRONG` / `NOT DETECTED`) with the AGC value. Startup logs an initial magnet snapshot with STATUS, AGC and MAGNITUDE.
+- **State broadcast:** every poll pushes `tunerFraction`, `tunerRaw` (in 12-bit angle counts) and `tunerBand` into `radioState`; the debug page renders a live 180° needle with wedge markers per band.
+- **Fallback:** `isTunerActive()` returns false when the ADC/I2C isn't available or the AS5600 doesn't respond at 0x36. In that state `gpio.ts` falls back to the classic `lookupChannel(rawGpio & 0xFF)` path so the radio still works without an AS5600.
 - **Uses absolute path** for the persistence file: `${HOME}/.radionette/tuner-calibration.json`.
+- **Legacy compat:** `loadCalibration()` accepts old `minRaw`/`maxRaw` field names from the pre-I2C ADC-mode branch of this feature so a stale calibration file doesn't break startup; the file is rewritten with the new `minAngle`/`maxAngle` keys on next save.
 
-#### AS5600 analog-output OTP burn
+#### `src/scripts/as5600-burn.ts` — retired
 
-The AS5600 defaults to **PWM** on the OUT pin at every power-up. In our analog-only wiring we cannot afford to run SDA/SCL to the sensor just to reconfigure OUT on every boot, so we permanently write the analog-output preference into the chip's OTP once via a dedicated one-shot script:
-
-- `src/scripts/as5600-burn.ts` — reads STATUS + AGC + MAGNITUDE + CONF + MANG + ZMCO. Aborts if the magnet isn't detected or if ZMCO has already reached 3. Forces MANG to `0xFFF` (full 360°) and CONF's OUTS bits to `00` (analog full) in the live registers, then issues `BURN_SETTING` (write `0x40` to register `0xFF`), then verifies.
-- Requires explicit confirmation: pass `BURN` as an argv token to actually execute; without it the script only prints the pre/post plan.
-- Available as `npm run as5600-burn` on the Pi.
-- Once burned, the chip powers up in analog mode forever and the SDA/SCL wires can be removed.
-
-The runtime tuner does NOT try to reconfigure the AS5600 at boot — the OTP burn is the whole point. If SDA/SCL happen to be connected (e.g. during initial bring-up), `reportAs5600Health()` logs a magnet/AGC diagnostic line at startup so you can spot bad magnet placement. When the chip isn't on the bus (production state) the diagnostics silently no-op.
+An earlier iteration of this feature drove the AS5600 in analog mode via the ADS1115 AIN1 and needed a one-shot OTP burn to make analog its power-up default. The burn script (`npm run as5600-burn`) is still present in the repo for reference but is no longer part of the standard bring-up procedure — the current I2C-based tuner needs no chip configuration at all.
 
 ### WiFi Details
 

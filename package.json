@@ -11,6 +11,7 @@
     "smoke-display": "node dist/scripts/display-smoke.js",
     "render-test": "node dist/scripts/display-render-test.js",
     "as5600-burn": "node dist/scripts/as5600-burn.js",
+    "as5600-monitor": "node dist/scripts/as5600-monitor.js",
     "setup-pi": "ssh pi@radionette.local 'bash -s' < setup-pi.sh"
   },
   "license": "MIT",
