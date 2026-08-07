@@ -206,6 +206,17 @@ The tuner module (`src/tuner.ts`) uses an **AS5600** magnetic angle sensor glued
 - **Fallback:** `isTunerActive()` returns false when the ADC isn't available. In that state `gpio.ts` falls back to the classic `lookupChannel(rawGpio & 0xFF)` path so the radio still works without an AS5600.
 - **Uses absolute path** for the persistence file: `${HOME}/.radionette/tuner-calibration.json`.
 
+#### AS5600 analog-output OTP burn
+
+The AS5600 defaults to **PWM** on the OUT pin at every power-up. In our analog-only wiring we cannot afford to run SDA/SCL to the sensor just to reconfigure OUT on every boot, so we permanently write the analog-output preference into the chip's OTP once via a dedicated one-shot script:
+
+- `src/scripts/as5600-burn.ts` — reads STATUS + AGC + MAGNITUDE + CONF + MANG + ZMCO. Aborts if the magnet isn't detected or if ZMCO has already reached 3. Forces MANG to `0xFFF` (full 360°) and CONF's OUTS bits to `00` (analog full) in the live registers, then issues `BURN_SETTING` (write `0x40` to register `0xFF`), then verifies.
+- Requires explicit confirmation: pass `BURN` as an argv token to actually execute; without it the script only prints the pre/post plan.
+- Available as `npm run as5600-burn` on the Pi.
+- Once burned, the chip powers up in analog mode forever and the SDA/SCL wires can be removed.
+
+The runtime tuner does NOT try to reconfigure the AS5600 at boot — the OTP burn is the whole point. If SDA/SCL happen to be connected (e.g. during initial bring-up), `reportAs5600Health()` logs a magnet/AGC diagnostic line at startup so you can spot bad magnet placement. When the chip isn't on the bus (production state) the diagnostics silently no-op.
+
 ### WiFi Details
 
 The WiFi module (`src/wifi.ts`) provides:

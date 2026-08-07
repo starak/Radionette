@@ -101,8 +101,8 @@ The volume potentiometer and the tuning-needle magnetic sensor both share the sa
 |---|---|---|---|
 | ADS1115 VDD | Pi 3V3 (pin 1 or 17) | ADS1115 VDD | Shared 3V3 with AS5600 |
 | ADS1115 GND | Pi GND | ADS1115 GND | |
-| ADS1115 SDA | Pi GPIO 2 (pin 3) | ADS1115 SDA | Shared I2C bus |
-| ADS1115 SCL | Pi GPIO 3 (pin 5) | ADS1115 SCL | Shared I2C bus |
+| ADS1115 SDA | Pi GPIO 2 (pin 3) | ADS1115 SDA | I2C to Pi |
+| ADS1115 SCL | Pi GPIO 3 (pin 5) | ADS1115 SCL | I2C to Pi |
 | ADS1115 ADDR | GND | ADS1115 ADDR | → address 0x48 |
 | ADS1115 AIN0 | volume pot wiper | ADS1115 AIN0 | See "Volume" |
 | ADS1115 AIN1 | AS5600 OUT | ADS1115 AIN1 | Ratiometric 0-VDD analog angle |
@@ -110,8 +110,8 @@ The volume potentiometer and the tuning-needle magnetic sensor both share the sa
 | AS5600 GND | Pi GND | AS5600 GND | |
 | AS5600 OUT | AS5600 OUT | ADS1115 AIN1 | |
 | AS5600 DIR | GND | AS5600 DIR | Fix direction; can be inverted in software instead |
-| AS5600 SDA | *not connected* | — | Analog-only mode |
-| AS5600 SCL | *not connected* | — | Analog-only mode |
+| AS5600 SDA | *not connected* | — | See "AS5600 OTP burn" below |
+| AS5600 SCL | *not connected* | — | See "AS5600 OTP burn" below |
 | AS5600 PGO | *not connected* | — | |
 
 The AS5600's DIR pin must be tied to a defined level. Tying it to GND selects one rotation direction; if the needle ends up moving the wrong way through the channel list, either flip DIR to 3V3 or use the "Invert" toggle in the `/debug` Tuner panel.
@@ -119,6 +119,31 @@ The AS5600's DIR pin must be tied to a defined level. Tying it to GND selects on
 **Magnet:** a diametrically-magnetized disc (typically 6 mm × 3 mm) glued to the needle shaft, 0.5-3 mm above the AS5600 IC surface. Because the needle only sweeps 180°, the AS5600 delivers a linear analog voltage covering roughly half its full-scale range. The `/debug` Tuner panel captures the two mechanical endpoints and stores them in `~/.radionette/tuner-calibration.json`.
 
 **How tuning works:** the top nibble (bits 7-4) of the existing 8-bit rotary selector switch chooses the band (FM/AM/SW/...); the AS5600 needle angle then picks a station within that band by dividing the calibrated sweep into equal wedges (one per station currently in the band). When the AS5600 is missing or uncalibrated the code falls back to the pre-tuner behaviour where the full 8-bit switch value selects a channel directly from `channels.json`.
+
+#### AS5600 OTP burn (one-time)
+
+The AS5600 chip powers up with its OUT pin in **PWM** mode by default — we need it in **analog** mode. In the finished radio the AS5600's SDA/SCL are not wired to the Pi (there's no room on the bus, and the whole point is to avoid extra digital lines running through the analog signal path). Instead we permanently store the analog-output preference in the chip's OTP memory once, and then remove the I2C wires forever.
+
+Procedure:
+
+1. Fit the magnet above the AS5600 (STATUS.MD must read 1 or the burn fails).
+2. Temporarily wire AS5600 SDA/SCL to Pi GPIO 2 / 3 (or clip test leads onto the ADS1115's SDA/SCL — same bus).
+3. On the Pi, stop radionette and run a dry run first:
+   ```sh
+   pm2 stop radionette
+   cd ~/code
+   node dist/scripts/as5600-burn.js
+   ```
+   Read the "BEFORE" block carefully. Check that magnet status is `OK` and ZMCO is 0.
+4. If everything looks right, burn:
+   ```sh
+   node dist/scripts/as5600-burn.js BURN
+   ```
+   This writes `0x40` to register `0xFF` (BURN_SETTING) which is **irreversible**.
+5. Power-cycle the AS5600 (unplug and reconnect its VDD wire) so it reloads OTP into its live registers.
+6. Remove the temporary SDA/SCL wires. `pm2 start radionette`.
+
+From that point on the AS5600 comes up in analog mode on every future boot with no I2C required.
 
 ### Logo Assets
 

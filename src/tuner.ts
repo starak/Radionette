@@ -29,31 +29,22 @@ import {
   readAdcChannel,
   i2cProbe,
   i2cReadReg,
-  i2cWriteTo,
 } from "./adc";
 import { channelsForBand } from "./channels";
 import { radioState, ChannelInfo } from "./state";
 
-// ── AS5600 I2C — one-shot configuration ────────────────────────────────
+// ── AS5600 I2C diagnostics (optional) ──────────────────────────────────
 //
-// The AS5600 defaults to PWM output on the OUT pin. To use it as an
-// analog input for the ADS1115 we must set the CONF register's OUTS
-// field to 00 (analog, full 0-100% VDD).
+// The intended production wiring is analog-only: OUT → ADS1115 AIN1,
+// with SDA/SCL NOT connected once the AS5600 has been OTP-burned via
+// `src/scripts/as5600-burn.ts` to make analog its power-up default.
 //
-// Datasheet register map:
-//   0x07..0x08  CONF     (16-bit; MSB first)
-//     bits 5:2  = PWMF (bits 5:4) | OUTS (bits 3:2)
-//   0x0B        STATUS   bit 5=MD, bit 4=ML, bit 3=MH
-//   0x0C..0x0D  RAW_ANGLE (12-bit)
-//   0x1A        AGC      target ~128 (mid gain)
-//
-// We probe at 0x36. If present, log magnet health, force OUTS=00, and
-// continue. If absent, we fall back to using AIN1 as-is — the analog
-// output may still work if a previous session already configured it,
-// or the chip may be running on residual OTP settings.
+// If SDA/SCL happen to be connected (e.g. during initial bring-up or
+// while running the burn script), we take advantage of it and log
+// magnet health at boot so you can spot bad magnet placement without
+// a scope. When the chip isn't on the bus we stay silent.
 
 const AS5600_ADDR = 0x36;
-const AS5600_REG_CONF = 0x07;
 const AS5600_REG_STATUS = 0x0b;
 const AS5600_REG_RAW_ANGLE = 0x0c;
 const AS5600_REG_AGC = 0x1a;
@@ -62,16 +53,18 @@ const AS5600_STATUS_MD = 1 << 5; // magnet detected
 const AS5600_STATUS_ML = 1 << 4; // magnet too weak
 const AS5600_STATUS_MH = 1 << 3; // magnet too strong
 
-const AS5600_OUTS_MASK = 0b1100; // bits 3:2 of the low CONF byte
-const AS5600_OUTS_ANALOG_FULL = 0b0000; // bits 3:2 = 00
-
 /**
- * Read the AS5600 STATUS + AGC + RAW_ANGLE and log a summary. Returns
- * true if the chip responded.
+ * Log magnet-health diagnostics if the AS5600 responds on I2C. Silent
+ * no-op when the chip isn't wired to SDA/SCL (the intended production
+ * state after the OTP burn).
  */
-function readAs5600Diagnostics(): boolean {
+function reportAs5600Health(): void {
+  if (!i2cProbe(AS5600_ADDR)) {
+    // Expected in production once SDA/SCL are removed — say nothing.
+    return;
+  }
   const status = i2cReadReg(AS5600_ADDR, AS5600_REG_STATUS, 1);
-  if (!status) return false;
+  if (!status) return;
   const agc = i2cReadReg(AS5600_ADDR, AS5600_REG_AGC, 1);
   const rawAngle = i2cReadReg(AS5600_ADDR, AS5600_REG_RAW_ANGLE, 2);
 
@@ -91,63 +84,8 @@ function readAs5600Diagnostics(): boolean {
       : "OK"
     : "NOT DETECTED";
   console.log(
-    `[Tuner] AS5600 status: magnet=${magnetLabel} AGC=${agcVal} rawAngle12bit=${rawAngleVal} (0-4095)`
+    `[Tuner] AS5600 present on I2C — magnet=${magnetLabel} AGC=${agcVal} rawAngle12bit=${rawAngleVal}`
   );
-  return true;
-}
-
-/**
- * Force AS5600 OUT into analog full-range mode. Reads current CONF,
- * modifies only OUTS bits, writes back. Idempotent — safe on every boot.
- */
-function configureAs5600Analog(): void {
-  const conf = i2cReadReg(AS5600_ADDR, AS5600_REG_CONF, 2);
-  if (!conf) {
-    console.log(
-      "[Tuner] AS5600 CONF read failed — cannot force analog output mode"
-    );
-    return;
-  }
-  const currentLo = conf[1];
-  const outsBits = currentLo & AS5600_OUTS_MASK;
-  if (outsBits === AS5600_OUTS_ANALOG_FULL) {
-    console.log(
-      `[Tuner] AS5600 CONF already analog (raw CONF=0x${conf[0]
-        .toString(16)
-        .padStart(2, "0")}${conf[1].toString(16).padStart(2, "0")})`
-    );
-    return;
-  }
-  const newLo = (currentLo & ~AS5600_OUTS_MASK) | AS5600_OUTS_ANALOG_FULL;
-  const ok = i2cWriteTo(AS5600_ADDR, [AS5600_REG_CONF, conf[0], newLo]);
-  console.log(
-    `[Tuner] AS5600 CONF ${ok ? "updated" : "write FAILED"}: 0x${conf[0]
-      .toString(16)
-      .padStart(2, "0")}${currentLo.toString(16).padStart(2, "0")} -> 0x${conf[0]
-      .toString(16)
-      .padStart(2, "0")}${newLo.toString(16).padStart(2, "0")} (OUTS=analog full)`
-  );
-}
-
-/**
- * Probe and configure the AS5600 if present. Called once from initTuner().
- * Silent no-op when the chip is missing.
- */
-function initAs5600(): void {
-  if (!i2cProbe(AS5600_ADDR)) {
-    console.log(
-      "[Tuner] AS5600 not responding at 0x36 — cannot configure analog output. Check wiring (VDD/GND/SDA/SCL) and DIR pin."
-    );
-    return;
-  }
-  console.log("[Tuner] AS5600 found at 0x36");
-  readAs5600Diagnostics();
-  configureAs5600Analog();
-  // Wait a moment for the OUT pin to settle after mode change
-  const settleUntil = Date.now() + 20;
-  while (Date.now() < settleUntil) {
-    // spin
-  }
 }
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -485,9 +423,10 @@ export function initTuner(): void {
 
   loadCalibration();
 
-  // Configure the AS5600 for analog output (default is PWM). Silently
-  // skips when the chip isn't on the bus.
-  initAs5600();
+  // If SDA/SCL happen to be connected, log AS5600 magnet health for
+  // diagnostics. In production the AS5600 is analog-only (SDA/SCL not
+  // wired) after the OTP burn, so this is silent.
+  reportAs5600Health();
 
   // Prime with a single read so state has a value at boot, but do NOT
   // pre-fill the smoothing buffer. That way the buffer-full gate in
