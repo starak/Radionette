@@ -19,7 +19,8 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 - Mono/stereo switch on 1 GPIO input pin
 - 2 LEDs (power + Bluetooth indicator)
 - GC9A01 1.28" 240x240 round IPS display on SPI0
-- ADS1115 16-bit ADC on I2C bus 1 for the volume potentiometer
+- ADS1115 16-bit ADC on I2C bus 1 for the volume potentiometer (AIN0) and the AS5600 tuner sensor (AIN1)
+- AS5600 12-bit magnetic angle sensor on the needle shaft, wired in analog mode to ADS1115 AIN1
 - Audio output via 3.5mm jack or HDMI
 
 ### GPIO Pin Assignments
@@ -91,6 +92,33 @@ Bare GC9A01 panel (14/15-pin variant). Backlight (LEDA) is switched by GPIO 13 t
 | 10-15 | TP-* | (touch — leave open) | —                |
 
 **Backlight switching:** N-channel MOSFET (e.g. 2N7000, AO3400) — gate to GPIO 13 (Pi pin 33), source to GND, drain to LEDK; LEDA stays on 3V3. Alternatively a P-channel high-side switch on the LEDA rail. The `backlight.ts` module drives the gate on/off (no PWM) with a 10 s auto-off after the last user-visible event (channel change, BT device connect). Stays on while in BT search mode.
+
+### Analog Tuner Wiring (AS5600 + ADS1115)
+
+The volume potentiometer and the tuning-needle magnetic sensor both share the same ADS1115 on I2C bus 1. The ADS1115 is scanned at start-up on addresses 0x48-0x4b; the pot lives on AIN0 and the AS5600 on AIN1.
+
+| Signal | Wire from | Wire to | Notes |
+|---|---|---|---|
+| ADS1115 VDD | Pi 3V3 (pin 1 or 17) | ADS1115 VDD | Shared 3V3 with AS5600 |
+| ADS1115 GND | Pi GND | ADS1115 GND | |
+| ADS1115 SDA | Pi GPIO 2 (pin 3) | ADS1115 SDA | Shared I2C bus |
+| ADS1115 SCL | Pi GPIO 3 (pin 5) | ADS1115 SCL | Shared I2C bus |
+| ADS1115 ADDR | GND | ADS1115 ADDR | → address 0x48 |
+| ADS1115 AIN0 | volume pot wiper | ADS1115 AIN0 | See "Volume" |
+| ADS1115 AIN1 | AS5600 OUT | ADS1115 AIN1 | Ratiometric 0-VDD analog angle |
+| AS5600 VDD | Pi 3V3 | AS5600 VDD | |
+| AS5600 GND | Pi GND | AS5600 GND | |
+| AS5600 OUT | AS5600 OUT | ADS1115 AIN1 | |
+| AS5600 DIR | GND | AS5600 DIR | Fix direction; can be inverted in software instead |
+| AS5600 SDA | *not connected* | — | Analog-only mode |
+| AS5600 SCL | *not connected* | — | Analog-only mode |
+| AS5600 PGO | *not connected* | — | |
+
+The AS5600's DIR pin must be tied to a defined level. Tying it to GND selects one rotation direction; if the needle ends up moving the wrong way through the channel list, either flip DIR to 3V3 or use the "Invert" toggle in the `/debug` Tuner panel.
+
+**Magnet:** a diametrically-magnetized disc (typically 6 mm × 3 mm) glued to the needle shaft, 0.5-3 mm above the AS5600 IC surface. Because the needle only sweeps 180°, the AS5600 delivers a linear analog voltage covering roughly half its full-scale range. The `/debug` Tuner panel captures the two mechanical endpoints and stores them in `~/.radionette/tuner-calibration.json`.
+
+**How tuning works:** the top nibble (bits 7-4) of the existing 8-bit rotary selector switch chooses the band (FM/AM/SW/...); the AS5600 needle angle then picks a station within that band by dividing the calibrated sweep into equal wedges (one per station currently in the band). When the AS5600 is missing or uncalibrated the code falls back to the pre-tuner behaviour where the full 8-bit switch value selects a channel directly from `channels.json`.
 
 ### Logo Assets
 

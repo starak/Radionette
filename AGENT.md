@@ -44,15 +44,17 @@ Power ON + Bluetooth OFF
 
 | File | Purpose |
 |---|---|
-| `src/index.ts` | Entry point — wires modules: channels -> player -> bluetooth -> hotspot-alert -> web -> gpio -> volume -> display |
+| `src/index.ts` | Entry point — wires modules: channels -> player -> bluetooth -> hotspot-alert -> web -> adc -> tuner -> gpio -> volume -> display |
 | `src/state.ts` | Central state singleton + EventEmitter. All modules communicate through this. |
-| `src/gpio.ts` | Reads 11 input pins every 10ms, debounces (50ms), drives state machine, controls LED outputs. Falls back to dev mode when rpio unavailable. Exports `injectGpioValue()` for virtual dial API and `resetGpioOverride()` to revert to physical pins. |
-| `src/channels.ts` | Loads `channels.json` at startup. Looks up channel number -> name + URL. |
+| `src/gpio.ts` | Reads 11 input pins every 10ms, debounces (50ms), drives state machine, controls LED outputs. When the tuner is active, sends the top nibble of the channel-selector switch to `tuner.ts` as the current band and lets the tuner pick the concrete station; falls back to the classic full-8-bit lookup when the tuner isn't available. Exports `injectGpioValue()` for virtual dial API and `resetGpioOverride()` to revert to physical pins. |
+| `src/channels.ts` | Loads `channels.json` at startup. Looks up channel number -> name + URL. `channelsForBand(nibble)` enumerates channels sharing a top nibble for the tuner's wedge layout. |
 | `src/player.ts` | Picks `/usr/bin/mpg123` (direct MP3/icecast) or `/usr/bin/ffmpeg` (HLS `.m3u8`) per URL and spawns/kills the chosen process. Parses ICY stream metadata (mpg123) and stream-title lines (ffmpeg). Reacts to state events. Auto-retries with escalating backoff (5s, 10s, 30s) when stream fails and desired channel is still set. |
 | `src/bluetooth.ts` | Full Bluetooth A2DP sink management — enable/disable adapter, pairing agent, device monitoring, volume boost, flap detection, auto-reconnect, notification sounds. |
 | `src/audio.ts` | Mono/stereo audio mixing via PulseAudio `module-remap-sink`. Creates per-sink remap-sinks for all real sinks (ALSA + BT). Spawns `pactl subscribe` to dynamically handle new BT sinks and new sink-inputs. Listens for `mono:on`/`mono:off` events from GPIO. |
-| `src/volume.ts` | Volume control via I2C ADS1115 ADC. Polls potentiometer every 100ms, applies 10-sample rolling average for smoothing, sets PulseAudio master volume on all sinks via `pactl set-sink-volume`. Re-applies volume on mode changes (BT connect/disconnect). Falls back to dev mode when `ioctl` module or `/dev/i2c-1` is unavailable. |
-| `src/web.ts` | HTTP server (port 8080) + WebSocket. Serves status page, WiFi settings page, and WiFi API endpoints. System management endpoints (WiFi reset, reboot). Pushes live state to all connected clients. |
+| `src/adc.ts` | Shared ADS1115 service on `/dev/i2c-1`. Opens the fd once at boot, offers `readAdcChannel(mux)` for callers to read AIN0..AIN3 in single-shot mode. Consumed by `volume.ts` (AIN0) and `tuner.ts` (AIN1). |
+| `src/volume.ts` | Volume control. Reads AIN0 via `adc.ts` every 100 ms, applies a 10-sample rolling average, maps knob 1-100% onto PulseAudio 20-100% (bottom-floor to sit above the amp's audible threshold). Falls back to dev mode when the ADC isn't available. |
+| `src/tuner.ts` | AS5600 magnetic angle sensor in analog mode via ADS1115 AIN1. Polls every 50 ms, smooths to a fraction 0..1 across the calibrated sweep, combines with the current band nibble from `gpio.ts` to pick a channel from `channels.json` via `channelsForBand()`. Two-point calibration persisted to `~/.radionette/tuner-calibration.json`; `invert` flag for reversed rotation. Falls back silently when the ADC isn't available. |
+| `src/web.ts` | HTTP server (port 8080) + WebSocket. Serves status page, WiFi settings page, and WiFi API endpoints. System management endpoints (WiFi reset, reboot). Tuner endpoints (`GET /api/tuner`, `POST /api/tuner/calibrate`, `POST /api/tuner/invert`). Pushes live state to all connected clients. |
 | `src/wifi.ts` | WiFi management via `nmcli` — scan for networks, connect (triggers playback retry on success), start/stop hotspot, hotspot detection, WiFi reset, system reboot. Write operations use `sudo nmcli`. Falls back to mock data in dev mode. |
 | `src/hotspot-alert.ts` | Periodic bleep alert when hotspot is active in radio mode. Uses `aplay` (ALSA) for early-boot compatibility before PulseAudio starts. Polls hotspot status every 5s, loops `hotspot-bleep.wav` via aplay. |
 | `src/public/index.html` | Single-file status page with inline CSS/JS. Dark theme (neutral grey palette via CSS custom properties), live WebSocket updates, tab navigation (Status / WiFi / Debug). Channel list grouped by bank with bank headers. |
@@ -181,7 +183,28 @@ The volume module (`src/volume.ts`) reads a potentiometer via an ADS1115 16-bit 
 - **Polling:** Reads ADC every 100ms
 - **Dev mode:** Falls back silently when `ioctl` module is unavailable (dev machine) or `/dev/i2c-1` doesn't exist
 
-Requires I2C enabled on the Pi (`sudo raspi-config` -> Interface Options -> I2C -> Enable).
+Requires I2C enabled on the Pi (`sudo raspi-config` -> Interface Options -> I2C -> Enable). `setup-pi.sh` now does this automatically by writing `dtparam=i2c_arm=on` into `/boot/firmware/config.txt`.
+
+### Shared ADC (adc.ts)
+
+Both `volume.ts` and `tuner.ts` read different single-ended channels on the same ADS1115. To keep the fd, ioctl slave-select and register writes in one place, the low-level access lives in `src/adc.ts`:
+
+- **initAdc():** opens `/dev/i2c-1`, scans 0x48-0x4b, writes a probe config in single-shot mode on AIN0 and reads it back to verify. First address that verifies wins. Called from `index.ts` before `initVolume()` and `initTuner()`.
+- **readAdcChannel(mux):** writes a single-shot CONFIG for the given mux (see `ADC_MUX_AIN0`..`ADC_MUX_AIN3`), busy-waits ~10 ms (nominal 128 SPS conversion is 7.8 ms), reads the conversion register, sign-extends. Returns the raw signed 16-bit value or null on error.
+- **Blocking style:** the sleep is a synchronous busy-wait. The volume and tuner poll timers already run on their own `setInterval`, so a few ms of blocking inside a tick is cheaper than the async plumbing would be.
+- **Single-shot everywhere:** the ADS1115 was previously kept in continuous mode locked to AIN0. Switching to single-shot lets us multiplex two channels; the small conversion-wait cost is invisible at our 100/50 ms poll rates.
+
+### Tuner Details
+
+The tuner module (`src/tuner.ts`) uses an **AS5600** magnetic angle sensor glued to the needle shaft, wired in analog mode: `OUT` → ADS1115 `AIN1`. The needle sweeps 180°, so the AS5600 delivers a linear voltage covering roughly half its full 0-VDD range. The chip has no multi-turn ambiguity because we never leave one revolution.
+
+- **Poll interval:** 50 ms (`TUNER_POLL_MS`)
+- **Smoothing:** 6-sample rolling mean of raw ADC (300 ms window)
+- **Calibration:** two-point (min raw ↔ max raw) captured via `POST /api/tuner/calibrate {kind:"min"|"max"}`, persisted to `~/.radionette/tuner-calibration.json`. An `invert` flag flips the resulting fraction for cases where the AS5600 DIR pin ended up wired the wrong way.
+- **Fraction → channel:** the current band nibble (top 4 bits of the classic 8-bit channel switch) is passed in from `gpio.ts` via `setTunerBand()`. The list of channels whose top nibble matches becomes the wedge layout; the fraction picks a wedge with two layers of hysteresis (fractional deadband + wedge-entry hysteresis) to prevent flicker at boundaries.
+- **State broadcast:** every poll pushes `tunerFraction`, `tunerRaw` and `tunerBand` into `radioState`; the debug page renders a live 180° needle with wedge markers per band.
+- **Fallback:** `isTunerActive()` returns false when the ADC isn't available. In that state `gpio.ts` falls back to the classic `lookupChannel(rawGpio & 0xFF)` path so the radio still works without an AS5600.
+- **Uses absolute path** for the persistence file: `${HOME}/.radionette/tuner-calibration.json`.
 
 ### WiFi Details
 
