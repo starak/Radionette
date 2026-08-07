@@ -183,6 +183,10 @@ export function initAdc(): boolean {
  * Read a single ADS1115 channel. Blocks for ~10 ms while the ADC
  * completes a single-shot conversion. Returns the raw signed 16-bit
  * value, or null on error.
+ *
+ * On repeated I/O failures (bus down, chip lost power, etc.) the log
+ * output is heavily debounced so a persistent fault doesn't drown the
+ * pm2 log at 10+ lines/sec.
  */
 export function readAdcChannel(mux: number): number | null {
   if (i2cFd === null || deviceAddr === null) return null;
@@ -197,7 +201,7 @@ export function readAdcChannel(mux: number): number | null {
       Buffer.from([REG_CONFIG, (config >> 8) & 0xff, config & 0xff])
     );
   } catch (err: any) {
-    console.error(`[ADC] Write config failed (mux=${mux}): ${err.message}`);
+    reportAdcError(`Write config failed (mux=${mux}): ${err.message}`);
     return null;
   }
 
@@ -211,11 +215,53 @@ export function readAdcChannel(mux: number): number | null {
     const raw16 = (buf[0] << 8) | buf[1];
     // Single-ended reads are always non-negative in practice, but the
     // register is 16-bit two's complement. Sign-extend correctly.
+    reportAdcRecovery();
     return raw16 >= 0x8000 ? raw16 - 0x10000 : raw16;
   } catch (err: any) {
-    console.error(`[ADC] Read conversion failed (mux=${mux}): ${err.message}`);
+    reportAdcError(`Read conversion failed (mux=${mux}): ${err.message}`);
     return null;
   }
+}
+
+// ── Error debouncing ───────────────────────────────────────────────────
+//
+// A broken I2C bus produces up to 20 errors per second (2 syscalls per
+// read × 10 Hz poll × 2 channels). Log the first one, then only summary
+// lines while the fault persists, and one recovery line when reads
+// succeed again.
+
+let consecutiveErrors = 0;
+let errorSummaryPending = 0;
+let lastErrorSummaryAt = 0;
+const ERROR_SUMMARY_INTERVAL_MS = 30_000;
+
+function reportAdcError(message: string): void {
+  consecutiveErrors++;
+  if (consecutiveErrors === 1) {
+    console.error(`[ADC] ${message}`);
+    lastErrorSummaryAt = Date.now();
+    errorSummaryPending = 0;
+    return;
+  }
+  errorSummaryPending++;
+  const now = Date.now();
+  if (now - lastErrorSummaryAt >= ERROR_SUMMARY_INTERVAL_MS) {
+    console.error(
+      `[ADC] +${errorSummaryPending} more read/write failures over the last ${
+        (now - lastErrorSummaryAt) / 1000
+      }s (last: ${message})`
+    );
+    lastErrorSummaryAt = now;
+    errorSummaryPending = 0;
+  }
+}
+
+function reportAdcRecovery(): void {
+  if (consecutiveErrors === 0) return;
+  const missed = consecutiveErrors + errorSummaryPending;
+  console.log(`[ADC] Recovered after ${missed} failed reads`);
+  consecutiveErrors = 0;
+  errorSummaryPending = 0;
 }
 
 /**
@@ -254,6 +300,7 @@ export function i2cProbe(addr: number): boolean {
 /**
  * Write bytes to a device on the bus. First byte is typically the
  * register address, followed by data bytes. Returns true on success.
+ * Fails silently — callers decide whether to log.
  */
 export function i2cWriteTo(addr: number, bytes: Buffer | number[]): boolean {
   if (i2cFd === null || !ioctl) return false;
@@ -263,10 +310,7 @@ export function i2cWriteTo(addr: number, bytes: Buffer | number[]): boolean {
     currentSlave = addr;
     writeSync(i2cFd, buf);
     return true;
-  } catch (err: any) {
-    console.error(
-      `[ADC] i2cWriteTo(0x${addr.toString(16)}) failed: ${err.message}`
-    );
+  } catch {
     return false;
   }
 }
@@ -274,7 +318,7 @@ export function i2cWriteTo(addr: number, bytes: Buffer | number[]): boolean {
 /**
  * Register-read pattern: write a single register-address byte, then
  * read `length` bytes back. Returns the read bytes as a Buffer, or
- * null on failure.
+ * null on failure. Fails silently — callers decide whether to log.
  */
 export function i2cReadReg(
   addr: number,
@@ -289,10 +333,7 @@ export function i2cReadReg(
     const buf = Buffer.alloc(length);
     readSync(i2cFd, buf, 0, length, null);
     return buf;
-  } catch (err: any) {
-    console.error(
-      `[ADC] i2cReadReg(0x${addr.toString(16)},0x${register.toString(16)}) failed: ${err.message}`
-    );
+  } catch {
     return null;
   }
 }
