@@ -545,6 +545,46 @@
     </div>
   </div>
 
+  <!-- Tuner (AS5600) -->
+  <div class="card">
+    <h2>Tuner</h2>
+    <div class="dial-group">
+      <span class="dial-label">Status</span>
+      <span id="tuner-status">—</span>
+    </div>
+    <div class="dial-group">
+      <span class="dial-label">Raw</span>
+      <span id="tuner-raw" style="font-family:monospace">—</span>
+      <span class="dial-label" style="margin-left:1rem">Min</span>
+      <span id="tuner-min" style="font-family:monospace">—</span>
+      <span class="dial-label" style="margin-left:1rem">Max</span>
+      <span id="tuner-max" style="font-family:monospace">—</span>
+    </div>
+    <div class="dial-group">
+      <span class="dial-label">Band</span>
+      <span id="tuner-band" style="font-family:monospace">—</span>
+      <span class="dial-label" style="margin-left:1rem">Fraction</span>
+      <span id="tuner-fraction" style="font-family:monospace">—</span>
+    </div>
+    <!-- Needle -->
+    <div id="tuner-needle-track" style="position:relative;height:36px;margin:0.6rem 0;background:#111;border-radius:6px;overflow:hidden;">
+      <div id="tuner-wedges" style="position:absolute;inset:0"></div>
+      <div id="tuner-needle" style="position:absolute;top:2px;bottom:2px;width:2px;background:#f80;left:0"></div>
+    </div>
+    <div class="dial-group">
+      <span class="dial-label">Channels in band</span>
+      <span id="tuner-channels">—</span>
+    </div>
+    <div class="dial-group" style="justify-content:flex-end;gap:0.4rem">
+      <button class="dial-btn" onclick="tunerCalibrate('min')">Set Min (at CCW stop)</button>
+      <button class="dial-btn" onclick="tunerCalibrate('max')">Set Max (at CW stop)</button>
+      <button class="dial-btn" onclick="tunerToggleInvert()"><span id="tuner-invert-label">Invert: off</span></button>
+    </div>
+    <div class="dial-note">
+      Point the needle at the mechanical CCW end, click <b>Set Min</b>. Point at the CW end, click <b>Set Max</b>. If the sweep runs backwards, toggle <b>Invert</b>. Persisted to <code>~/.radionette/tuner-calibration.json</code>.
+    </div>
+  </div>
+
   <!-- Display override -->
   <div class="card">
     <h2>Display Override</h2>
@@ -751,6 +791,9 @@
 
       // Sync tint sliders
       syncTintFromServer(s.displayTint);
+
+      // Sync tuner panel
+      syncTunerFromServer(s.tuner);
     }
 
     function escHtml(s) {
@@ -936,6 +979,82 @@
       $('tint-r-val').textContent = (+t.r).toFixed(2);
       $('tint-g-val').textContent = (+t.g).toFixed(2);
       $('tint-b-val').textContent = (+t.b).toFixed(2);
+    }
+
+    // --- Tuner ---
+
+    let lastTunerInvert = false;
+
+    function syncTunerFromServer(t) {
+      if (!t) return;
+      const statusEl = $('tuner-status');
+      const rawEl = $('tuner-raw');
+      const minEl = $('tuner-min');
+      const maxEl = $('tuner-max');
+      const bandEl = $('tuner-band');
+      const fracEl = $('tuner-fraction');
+      const chEl = $('tuner-channels');
+      const wedgesEl = $('tuner-wedges');
+      const needleEl = $('tuner-needle');
+      const invertLabel = $('tuner-invert-label');
+
+      statusEl.textContent = t.ready ? 'ready' : 'not available';
+      rawEl.textContent = t.latestRaw != null ? String(t.latestRaw) : '—';
+      minEl.textContent = t.calibration ? String(t.calibration.minRaw) : '—';
+      maxEl.textContent = t.calibration ? String(t.calibration.maxRaw) : '—';
+      bandEl.textContent = '0x' + (t.band || 0).toString(16);
+      fracEl.textContent = t.fraction != null ? (+t.fraction).toFixed(3) : '—';
+
+      const channels = t.channelsInBand || [];
+      chEl.textContent = channels.length ? channels.map(c => c.number + ' ' + c.name).join(', ') : '(none in this band)';
+
+      // Wedges: divide the track into equal segments per channel in the band
+      if (channels.length > 0) {
+        const w = 100 / channels.length;
+        let html = '';
+        for (let i = 0; i < channels.length; i++) {
+          const left = i * w;
+          const isActive = i === Math.min(channels.length - 1, Math.max(0, Math.floor((t.fraction || 0) * channels.length)));
+          const bg = isActive ? 'rgba(255,140,0,0.15)' : 'transparent';
+          const border = i > 0 ? '1px solid rgba(255,255,255,0.15)' : 'none';
+          html += '<div style="position:absolute;top:0;bottom:0;left:' + left + '%;width:' + w + '%;background:' + bg + ';border-left:' + border + '"></div>';
+        }
+        wedgesEl.innerHTML = html;
+      } else {
+        wedgesEl.innerHTML = '';
+      }
+      needleEl.style.left = ((t.fraction || 0) * 100).toFixed(2) + '%';
+
+      // Invert label
+      const inv = !!(t.calibration && t.calibration.invert);
+      if (inv !== lastTunerInvert) {
+        lastTunerInvert = inv;
+        invertLabel.textContent = 'Invert: ' + (inv ? 'on' : 'off');
+      }
+    }
+
+    async function tunerCalibrate(kind) {
+      try {
+        const r = await fetch('/api/tuner/calibrate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind })
+        });
+        const j = await r.json();
+        if (!j.success) alert('Calibrate failed: ' + (j.error || 'unknown'));
+      } catch (e) { alert('Calibrate failed: ' + e.message); }
+    }
+
+    async function tunerToggleInvert() {
+      try {
+        const r = await fetch('/api/tuner/invert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invert: !lastTunerInvert })
+        });
+        const j = await r.json();
+        if (!j.success) alert('Invert failed: ' + (j.error || 'unknown'));
+      } catch (e) { alert('Invert failed: ' + e.message); }
     }
 
     // --- System actions ---

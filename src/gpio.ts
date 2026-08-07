@@ -1,5 +1,6 @@
 import { radioState } from "./state";
 import { lookupChannel } from "./channels";
+import { setTunerBand, isTunerActive } from "./tuner";
 
 // rpio is a native module that only works on the Pi.
 // We require() it so the app can still be built on other machines
@@ -84,7 +85,20 @@ function processValue(rawValue: number): void {
   // Radio mode — power on, bluetooth off
   updateOutputs(true, false);
 
-  // Look up channel
+  // Top nibble = band (FM/AM/SW/...). Always inform the tuner so it can
+  // re-evaluate the current station within the new band.
+  const bandNibble = (channelBits >> 4) & 0x0f;
+  setTunerBand(bandNibble);
+
+  if (isTunerActive()) {
+    // Tuner drives the actual channel selection based on needle angle
+    // combined with the band nibble. gpio.ts stays out of setChannel().
+    return;
+  }
+
+  // Fallback (no tuner hardware / not calibrated / dev mode): look up the
+  // full 8-bit channel value the classic way so the radio still works
+  // when the AS5600 isn't wired.
   const channel = lookupChannel(channelBits);
   radioState.setChannel(channel);
 }
@@ -131,6 +145,9 @@ function poll(): void {
           label = "Power OFF";
         } else if (bluetoothBit === 1) {
           label = "Bluetooth";
+        } else if (isTunerActive()) {
+          const band = (rawValue >> 4) & 0x0f;
+          label = `Band: 0x${band.toString(16)} (tuner)`;
         } else {
           const ch = lookupChannel(rawValue & 0xff);
           label = ch ? `Channel: ${ch.number} – ${ch.name}` : "Channel: none";

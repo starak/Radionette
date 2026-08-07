@@ -8,6 +8,7 @@ import { getWifiStatus, scanNetworks, connectToNetwork, resetWifiConfig, rebootS
 import { injectGpioValue, resetGpioOverride } from "./gpio";
 import { setLogoOverride, getLogoOverride, setDisplayTint, getDisplayTint } from "./display-service";
 import { setVolumeSoftware } from "./volume";
+import { calibrateTuner, invertTuner, tunerStatus } from "./tuner";
 
 const PORT = 8080;
 
@@ -21,6 +22,7 @@ function getStatusPayload(): string {
     channels: getAllChannels(),
     logoOverride: getLogoOverride(),
     displayTint: getDisplayTint(),
+    tuner: tunerStatus(),
   });
 }
 
@@ -264,6 +266,63 @@ export function startWebServer(): void {
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ success: false, error: err.message }));
       }
+      return;
+    }
+
+    if (req.url === "/api/tuner" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(tunerStatus()));
+      return;
+    }
+
+    if (req.url === "/api/tuner/calibrate" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", () => {
+        try {
+          const { kind } = JSON.parse(body);
+          if (kind !== "min" && kind !== "max") {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ success: false, error: "kind must be 'min' or 'max'" }));
+            return;
+          }
+          const captured = calibrateTuner(kind);
+          if (captured === null) {
+            res.writeHead(503, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ success: false, error: "Tuner unavailable" }));
+            return;
+          }
+          broadcast(getStatusPayload());
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: true, kind, raw: captured, tuner: tunerStatus() }));
+        } catch (err: any) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: false, error: err.message || "Invalid JSON" }));
+        }
+      });
+      return;
+    }
+
+    if (req.url === "/api/tuner/invert" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", () => {
+        try {
+          const { invert } = JSON.parse(body);
+          if (typeof invert !== "boolean") {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ success: false, error: "invert must be a boolean" }));
+            return;
+          }
+          invertTuner(invert);
+          broadcast(getStatusPayload());
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: true, invert, tuner: tunerStatus() }));
+        } catch (err: any) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: false, error: err.message || "Invalid JSON" }));
+        }
+      });
       return;
     }
 

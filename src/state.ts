@@ -20,6 +20,11 @@ export interface RadioState {
   mono: boolean;
   volume: number;
   rawGpio: number;
+  // Tuner (AS5600 analog → ADS1115 AIN1). null when the tuner is
+  // disabled or hasn't produced its first reading yet.
+  tunerFraction: number | null;    // 0..1 across the calibrated sweep
+  tunerRaw: number | null;         // most recent raw ADC reading
+  tunerBand: number;               // top nibble of the channel selector switch
 }
 
 export interface RadioEvents {
@@ -34,6 +39,7 @@ export interface RadioEvents {
   "mono:on": [];
   "mono:off": [];
   "volume:change": [volume: number];
+  "tuner:change": [fraction: number, band: number];
   "state:change": [state: RadioState];
 }
 
@@ -49,6 +55,9 @@ class RadioStateEmitter extends EventEmitter {
     mono: false,
     volume: 100,
     rawGpio: 0,
+    tunerFraction: null,
+    tunerRaw: null,
+    tunerBand: 0,
   };
 
   get state(): Readonly<RadioState> {
@@ -157,6 +166,28 @@ class RadioStateEmitter extends EventEmitter {
     if (this._state.volume === clamped) return;
     this._state.volume = clamped;
     this.emit("volume:change", clamped);
+    this.emitStateChange();
+  }
+
+  /**
+   * Update the tuner reading. Emits `tuner:change` and `state:change`
+   * (both broadcast to the web UI so the debug page can show a live
+   * needle). Silently no-ops on nulls to avoid flooding events during
+   * dev mode.
+   */
+  setTuner(fraction: number | null, raw: number | null, band: number): void {
+    const nibble = band & 0x0f;
+    const changed =
+      this._state.tunerFraction !== fraction ||
+      this._state.tunerRaw !== raw ||
+      this._state.tunerBand !== nibble;
+    this._state.tunerFraction = fraction;
+    this._state.tunerRaw = raw;
+    this._state.tunerBand = nibble;
+    if (!changed) return;
+    if (fraction !== null) {
+      this.emit("tuner:change", fraction, nibble);
+    }
     this.emitStateChange();
   }
 

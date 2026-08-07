@@ -59,3 +59,26 @@ export function getAllChannels(): Array<{ number: number } & ChannelEntry> {
     .map(([num, entry]) => ({ number: num, ...entry }))
     .sort((a, b) => a.number - b.number);
 }
+
+/**
+ * Return all channels whose top nibble (bits 7-4) matches `bandNibble`,
+ * sorted by channel number. Used by the tuner to enumerate stations
+ * within the currently-selected band.
+ */
+export function channelsForBand(
+  bandNibble: number
+): ChannelInfo[] {
+  const nibble = bandNibble & 0x0f;
+  const out: ChannelInfo[] = [];
+  for (const [num, entry] of channelMap.entries()) {
+    if (((num >> 4) & 0x0f) === nibble) {
+      out.push({
+        number: num,
+        name: entry.name,
+        url: entry.url,
+        logo: entry.logo,
+      });
+    }
+  }
+  return out.sort((a, b) => a.number - b.number);
+}
