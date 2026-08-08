@@ -11,6 +11,7 @@ import { initWifi } from "./wifi";
 import { initAdc, stopAdc } from "./adc";
 import { initVolume, stopVolume } from "./volume";
 import { initTuner, stopTuner } from "./tuner";
+import { initArtwork, stopArtwork } from "./artwork";
 import {
   initDisplayService,
   stopDisplayService,
@@ -74,6 +75,9 @@ if (blHandle) {
 // 11. Initialize volume (reads AIN0 via adc.ts)
 initVolume();
 
+// 11b. Album-art lookup driven by player metadata.
+initArtwork();
+
 // 12. Initialize display service. Done last so all state-emitting modules are
 //     already wired; the service immediately paints the current state.
 //     Any failure here must NOT take down the rest of the radio.
@@ -98,6 +102,7 @@ async function shutdown(): Promise<void> {
     console.error("[Display] shutdown error:", err);
   }
   stopVolume();
+  stopArtwork();
   stopTuner();
   stopAdc();
   // Stop backlight before gpio.ts closes the pin.

@@ -51,8 +51,11 @@ function pickLogoForState(s: RadioState): string | null {
       ? opts!.bluetoothConnectedLogo
       : opts!.bluetoothLogo;
   }
-  if (s.mode === "radio" && s.channel) {
-    return s.channel.logo ?? opts!.defaultLogo;
+  if (s.mode === "radio") {
+    // Prefer live album art when we have it — falls back to the channel
+    // logo (or default) when there's no match or no metadata parsed.
+    if (s.nowPlayingArtwork?.url) return s.nowPlayingArtwork.url;
+    if (s.channel) return s.channel.logo ?? opts!.defaultLogo;
   }
   // mode === "off" while powered, or radio with no channel, or anything else
   return opts!.defaultLogo;

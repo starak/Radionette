@@ -135,6 +135,17 @@ Channel and mode logos are PNG or animated GIF files in `assets/channel-logos/`.
 - Logos are cached in memory after first decode; restart radionette to pick up file changes.
 - On every power-on, `default.png` is shown for 2 s before the channel/BT logo appears (a brief "splash" so the panel doesn't snap straight to content).
 
+### Now-playing album art
+
+Radio streams don't carry image URLs in their metadata — ICY tags and HLS manifests only expose text. What they do carry is a "Now playing" string that usually formats as `Artist - Song`. When a new title arrives on `player:metadata`, `src/artwork.ts` parses the string, queries the free iTunes Search API for that song, and — on a hit — pushes the album-art URL through `radioState.setArtwork()`. The display service prefers this URL over the channel's static logo whenever it's fresh, and falls back to `channel.logo` on:
+
+- No metadata yet (just tuned in)
+- Metadata that isn't `Artist - Song` (news, programme names, station idents)
+- iTunes miss (song not in the catalogue)
+- Channel change or player stop (artwork is cleared)
+
+The URL is downloaded and decoded through the same logo pipeline (240x240, round-masked). Results are cached in memory keyed by `Artist - Title` so repeated songs don't re-hit the API. Everything is opportunistic — a network hiccup or an API 500 just leaves the channel logo in place.
+
 ## Raspberry Pi Setup
 
 ### 1. OS & Network

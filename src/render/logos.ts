@@ -88,11 +88,30 @@ export function resolveLogoPath(ref: string | undefined | null): string | null {
 /**
  * Load and cache a logo. Returns the rendered RGB565 frame(s).
  *
- * If `ref` resolves to a missing file, falls back to `defaultLogo`. If THAT
- * is also missing, returns a solid black single-frame logo so callers always
- * get something paintable.
+ * `ref` may be:
+ *   - a filename inside logoDir (e.g. "NRK-P1.png")
+ *   - an absolute filesystem path
+ *   - an http(s):// URL (fetched, decoded, kept in memory only)
+ *
+ * If `ref` is missing or fails to resolve/fetch/decode, falls back to
+ * the configured `defaultLogo`. If THAT is also missing, returns a
+ * solid black single-frame logo so callers always get something
+ * paintable.
  */
 export async function loadLogo(ref: string | undefined | null): Promise<RenderedLogo> {
+  if (typeof ref === "string" && /^https?:\/\//i.test(ref)) {
+    const cached = cache.get(ref);
+    if (cached) return cached;
+    try {
+      const logo = await renderRemote(ref);
+      cache.set(ref, logo);
+      return logo;
+    } catch (err) {
+      console.error(`[Logos] Failed to fetch/render ${ref}:`, err);
+      // Fall through to default fallback below
+    }
+  }
+
   let abs = resolveLogoPath(ref);
   if (!abs) {
     abs = resolveLogoPath(opts.defaultLogo);
@@ -182,6 +201,41 @@ async function renderStill(absPath: string): Promise<RenderedLogo> {
   const rgba = ctx.getImageData(0, 0, WIDTH, HEIGHT).data;
   return {
     source: absPath,
+    frames: [{ rgb565: rgba8888ToRgb565(rgba), delayMs: Infinity }],
+    animated: false,
+  };
+}
+
+/**
+ * Fetch a PNG/JPEG from an http(s):// URL and render it into a
+ * RenderedLogo. Bytes are held only long enough to decode; the cache
+ * stores the RGB565 frame. Animated URLs (GIFs) aren't supported here
+ * — the artwork feed we point this at (iTunes) only serves static
+ * images anyway.
+ */
+async function renderRemote(url: string): Promise<RenderedLogo> {
+  const ac = new AbortController();
+  const timeout = setTimeout(() => ac.abort(), 8000);
+  let bytes: Buffer;
+  try {
+    const res = await fetch(url, { signal: ac.signal });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const ab = await res.arrayBuffer();
+    bytes = Buffer.from(ab);
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  const { loadImage } = canvas();
+  const img = await loadImage(bytes);
+  const { canvas: c, ctx } = makeRoundCanvas();
+  drawContained(ctx, img, img.width, img.height);
+  ctx.restore();
+  const rgba = ctx.getImageData(0, 0, WIDTH, HEIGHT).data;
+  return {
+    source: url,
     frames: [{ rgb565: rgba8888ToRgb565(rgba), delayMs: Infinity }],
     animated: false,
   };

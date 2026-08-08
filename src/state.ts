@@ -31,6 +31,17 @@ export interface RadioState {
   tunerRaw: number | null;         // most recent 12-bit angle reading
   /** Current band ordinal (1..N), or 0 when the hardware nibble maps to no band. */
   tunerBand: number;
+  /**
+   * Latest album-art match for the currently-playing song. null when we
+   * don't have artwork (no metadata parsed, talk radio, iTunes miss).
+   */
+  nowPlayingArtwork: NowPlayingArtwork | null;
+}
+
+export interface NowPlayingArtwork {
+  url: string;
+  artist: string;
+  title: string;
 }
 
 export interface RadioEvents {
@@ -46,6 +57,7 @@ export interface RadioEvents {
   "mono:off": [];
   "volume:change": [volume: number];
   "tuner:change": [fraction: number, band: number];
+  "artwork:change": [artwork: NowPlayingArtwork | null];
   "state:change": [state: RadioState];
 }
 
@@ -64,6 +76,7 @@ class RadioStateEmitter extends EventEmitter {
     tunerFraction: null,
     tunerRaw: null,
     tunerBand: 0,
+    nowPlayingArtwork: null,
   };
 
   get state(): Readonly<RadioState> {
@@ -126,6 +139,7 @@ class RadioStateEmitter extends EventEmitter {
     if (currentId === nextId) return;
     this._state.channel = channel;
     this._state.metadata = null;
+    this._state.nowPlayingArtwork = null;
     this.emit("channel:change", channel);
     this.emitStateChange();
   }
@@ -194,6 +208,20 @@ class RadioStateEmitter extends EventEmitter {
     if (fraction !== null) {
       this.emit("tuner:change", fraction, band);
     }
+    this.emitStateChange();
+  }
+
+  /**
+   * Record the current now-playing album artwork match. Pass null to
+   * clear (e.g. no metadata, iTunes miss, channel changed).
+   */
+  setArtwork(artwork: NowPlayingArtwork | null): void {
+    const current = this._state.nowPlayingArtwork;
+    if (current?.url === artwork?.url && current?.artist === artwork?.artist && current?.title === artwork?.title) {
+      return;
+    }
+    this._state.nowPlayingArtwork = artwork;
+    this.emit("artwork:change", artwork);
     this.emitStateChange();
   }
 

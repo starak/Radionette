@@ -735,11 +735,15 @@
 
       // Full state table
       const stateTable = $('state-table');
-      const stateKeys = ['power', 'mode', 'playing', 'bluetooth', 'bluetoothDevice', 'mono', 'volume', 'metadata', 'rawGpio'];
+      const stateKeys = ['power', 'mode', 'playing', 'bluetooth', 'bluetoothDevice', 'mono', 'volume', 'metadata', 'nowPlayingArtwork', 'rawGpio'];
       let rows = '';
       stateKeys.forEach(k => {
         const v = s[k];
-        const display = v === undefined ? '—' : v === null ? 'null' : String(v);
+        let display;
+        if (v === undefined) display = '—';
+        else if (v === null) display = 'null';
+        else if (typeof v === 'object') display = JSON.stringify(v);
+        else display = String(v);
         rows += '<tr><td class="key">' + k + '</td><td class="val">' + escHtml(display) + '</td></tr>';
       });
       stateTable.innerHTML = rows;
