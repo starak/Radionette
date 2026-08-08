@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { WebSocketServer, WebSocket } from "ws";
 import { radioState, RadioState } from "./state";
-import { getAllChannels } from "./channels";
+import { getAllChannels, getAllBands } from "./channels";
 import { getWifiStatus, scanNetworks, connectToNetwork, resetWifiConfig, rebootSystem } from "./wifi";
 import { injectGpioValue, resetGpioOverride } from "./gpio";
 import { setLogoOverride, getLogoOverride, setDisplayTint, getDisplayTint } from "./display-service";
@@ -19,6 +19,7 @@ function getStatusPayload(): string {
   return JSON.stringify({
     type: "state",
     ...radioState.state,
+    bands: getAllBands(),
     channels: getAllChannels(),
     logoOverride: getLogoOverride(),
     displayTint: getDisplayTint(),

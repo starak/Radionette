@@ -485,22 +485,9 @@
       </div>
     </div>
     <div class="dial-group">
-      <span class="dial-label">Bank</span>
+      <span class="dial-label">Band</span>
       <div class="dial-buttons" id="dial-bank">
-        <button class="dial-btn" data-val="1" onclick="dialSet('bank',1)">1</button>
-        <button class="dial-btn" data-val="2" onclick="dialSet('bank',2)">2</button>
-        <button class="dial-btn" data-val="3" onclick="dialSet('bank',3)">3</button>
-        <button class="dial-btn" data-val="4" onclick="dialSet('bank',4)">4</button>
-      </div>
-    </div>
-    <div class="dial-group">
-      <span class="dial-label">Sub</span>
-      <div class="dial-buttons" id="dial-sub">
-        <button class="dial-btn" data-val="1" onclick="dialSet('sub',1)">1</button>
-        <button class="dial-btn" data-val="2" onclick="dialSet('sub',2)">2</button>
-        <button class="dial-btn" data-val="3" onclick="dialSet('sub',3)">3</button>
-        <button class="dial-btn" data-val="4" onclick="dialSet('sub',4)">4</button>
-        <button class="dial-btn" data-val="5" onclick="dialSet('sub',5)">5</button>
+        <!-- Populated dynamically from s.bands. -->
       </div>
     </div>
     <div class="dial-group">
@@ -702,13 +689,11 @@
         bitDiv.appendChild(grp);
       });
 
-      // Hardware-to-label mappings.
-      // Bank is still a physical rotary position; map to human labels 1..4.
-      // Sub-channel is now driven by the AS5600 tuner within the current
-      // band, so all 16 sub values 0..15 are valid. We render them as
-      // their raw sub value (0..15) instead of the old sparse 1..5 map.
-      const bankMap = { 12: 1, 8: 2, 10: 3, 3: 4 };
-      const subLabelForRaw = (subRaw) => subRaw;
+      // Server-provided bands table drives all "which band is this?"
+      // decisions. Empty until the first state message arrives.
+      const bandsList = Array.isArray(s.bands) ? s.bands : [];
+      const bandByHw = new Map(bandsList.map(b => [b.hardware, b]));
+      const bandByOrdinal = new Map(bandsList.map(b => [b.ordinal, b]));
 
       // Decoded values
       const mono = (raw >> 10) & 1;
@@ -716,8 +701,7 @@
       const bt = (raw >> 8) & 1;
       const bankRaw = (raw >> 4) & 0xF;
       const subRaw = raw & 0xF;
-      const bankLabel = bankMap[bankRaw];
-      const subLabel = subLabelForRaw(subRaw);
+      const bandForBits = bandByHw.get(bankRaw);
 
       $('dec-mono').textContent = mono ? 'STEREO' : 'MONO';
       $('dec-mono').className = 'decoded-value' + (mono ? '' : ' clr-green');
@@ -725,15 +709,17 @@
       $('dec-power').className = 'decoded-value' + (power ? ' clr-green' : '');
       $('dec-bt').textContent = bt ? 'ON' : 'OFF';
       $('dec-bt').className = 'decoded-value' + (bt ? ' clr-blue' : '');
-      $('dec-bank').textContent = bankLabel ? 'Bank ' + bankLabel : 'unknown (' + bankRaw + ')';
+      $('dec-bank').textContent = bandForBits
+        ? bandForBits.name + ' (#' + bandForBits.ordinal + ')'
+        : 'unmapped nibble 0x' + bankRaw.toString(16);
       $('dec-bank').className = 'decoded-value clr-amber';
-      $('dec-sub').textContent = 'Sub ' + subLabel;
+      $('dec-sub').textContent = 'Sub 0x' + subRaw.toString(16);
       $('dec-sub').className = 'decoded-value clr-amber';
       $('dec-raw').textContent = raw;
 
       // Channel info
       if (s.channel) {
-        $('ch-number').textContent = s.channel.number;
+        $('ch-number').textContent = s.channel.id;
         $('ch-name').textContent = s.channel.name;
         $('ch-url').textContent = s.channel.url || '—';
       } else {
@@ -758,32 +744,28 @@
       });
       stateTable.innerHTML = rows;
 
-      // Channel map — group by bank (unknown banks go last), sort by full
-      // channel number within each bank so the tuner wedge order is
-      // visible.
+      // Channel map — group by band ordinal (following bandsList order),
+      // sort by `order` within band.
       if (s.channels) {
         const mapTable = $('channel-map');
         const sorted = s.channels.slice().sort((a, b) => {
-          const aBank = bankMap[(a.number >> 4) & 0xF] || 99;
-          const bBank = bankMap[(b.number >> 4) & 0xF] || 99;
-          if (aBank !== bBank) return aBank - bBank;
-          return a.number - b.number;
+          if (a.band !== b.band) return a.band - b.band;
+          return a.order - b.order;
         });
         let mrows = '';
-        let lastBank = null;
+        let lastBand = null;
         sorted.forEach(ch => {
-          const active = s.channel && s.channel.number === ch.number;
-          const b = (ch.number >> 4) & 0xF;
-          const sb = ch.number & 0xF;
-          const bLabel = bankMap[b] || '?';
-          const sLabel = subLabelForRaw(sb);
-          if (bLabel !== lastBank) {
-            const bankTitle = bLabel === '?' ? 'Unmapped' : 'Bank ' + bLabel;
-            mrows += '<tr><td class="bank-header" colspan="2">' + bankTitle + '</td></tr>';
-            lastBank = bLabel;
+          const activeChannel = s.channel && s.channel.id === ch.id;
+          if (ch.band !== lastBand) {
+            const bandInfo = bandByOrdinal.get(ch.band);
+            const bandTitle = bandInfo
+              ? bandInfo.name + ' (#' + bandInfo.ordinal + ', hw=0x' + bandInfo.hardware.toString(16) + ')'
+              : 'Band #' + ch.band + ' (undeclared)';
+            mrows += '<tr><td class="bank-header" colspan="2">' + escHtml(bandTitle) + '</td></tr>';
+            lastBand = ch.band;
           }
-          const style = active ? ' style="color:var(--accent);font-weight:600"' : '';
-          mrows += '<tr><td class="key"' + style + '>' + (active ? '> ' : '  ') + sLabel + '</td><td class="val"' + style + '>' + escHtml(ch.name) + '</td></tr>';
+          const style = activeChannel ? ' style="color:var(--accent);font-weight:600"' : '';
+          mrows += '<tr><td class="key"' + style + '>' + (activeChannel ? '> ' : '  ') + ch.order + '</td><td class="val"' + style + '>' + escHtml(ch.name) + '</td></tr>';
         });
         mapTable.innerHTML = mrows;
       }
@@ -808,18 +790,25 @@
     }
 
     // --- Virtual dial ---
+    //
+    // The physical rotary switch produces an 8-bit "channel selector"
+    // whose top nibble picks a band and whose bottom nibble is
+    // irrelevant when the AS5600 tuner is active (the needle picks the
+    // station within the band). The virtual dial mirrors that: Bank
+    // buttons inject a band's hardware nibble, sub-nibble stays 0.
+    //
+    // bandHwList is populated on every state message from s.bands so
+    // the Bank buttons always match the current channels.json.
 
-    // Reverse maps: label -> hardware value
-    const bankLabelToHw = { 1: 12, 2: 8, 3: 10, 4: 3 };
-    const subLabelToHw  = { 1: 0, 2: 1, 3: 8, 4: 10, 5: 12 };
+    let bandHwList = [];   // [{ ordinal, hardware, name }, ...]
 
-    // Current virtual dial state (labels, not hw values)
-    const dial = { power: 0, bt: 0, bank: 1, sub: 1, mono: 0 };
+    // Current virtual dial state
+    const dial = { power: 0, bt: 0, bankHw: 0, mono: 0 };
 
     function dialComputeRaw() {
-      const bankHw = bankLabelToHw[dial.bank] || 0;
-      const subHw = subLabelToHw[dial.sub] || 0;
-      return (dial.mono << 10) | (dial.power << 9) | (dial.bt << 8) | (bankHw << 4) | subHw;
+      // Sub-nibble is always 0 in virtual injections. The tuner (or the
+      // gpio.ts fallback) decides the actual channel from the band.
+      return (dial.mono << 10) | (dial.power << 9) | (dial.bt << 8) | (dial.bankHw << 4);
     }
 
     async function setVolume() {
@@ -849,28 +838,37 @@
       }
     }
 
+    /** Rebuild the Band button row whenever the server-sent bands list changes. */
+    function renderBandButtons() {
+      const container = $('dial-bank');
+      const currentKey = bandHwList.map(b => b.ordinal + ':' + b.hardware).join('|');
+      if (container.dataset.key === currentKey) return;
+      container.dataset.key = currentKey;
+      container.innerHTML = '';
+      bandHwList.forEach(band => {
+        const b = document.createElement('button');
+        b.className = 'dial-btn';
+        b.dataset.val = String(band.hardware);
+        b.textContent = String(band.ordinal);
+        b.title = band.name + ' (hw=0x' + band.hardware.toString(16) + ')';
+        b.onclick = () => dialSet('bankHw', band.hardware);
+        container.appendChild(b);
+      });
+    }
+
     function updateDialButtons() {
-      // Power
       const pwrBtns = $('dial-power').children;
       for (const b of pwrBtns) {
         b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.power ? ' active-green' : '');
       }
-      // Bluetooth
       const btBtns = $('dial-bt').children;
       for (const b of btBtns) {
         b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.bt ? ' active-blue' : '');
       }
-      // Bank
       const bankBtns = $('dial-bank').children;
       for (const b of bankBtns) {
-        b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.bank ? ' active-amber' : '');
+        b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.bankHw ? ' active-amber' : '');
       }
-      // Sub
-      const subBtns = $('dial-sub').children;
-      for (const b of subBtns) {
-        b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.sub ? ' active-amber' : '');
-      }
-      // Mono
       const monoBtns = $('dial-mono').children;
       for (const b of monoBtns) {
         b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.mono ? ' active-green' : '');
@@ -879,24 +877,20 @@
 
     // Sync virtual dial state from WebSocket data
     function syncDialFromState(s) {
+      // Refresh the band button row if the server-sent list changed.
+      const nextBands = Array.isArray(s.bands) ? s.bands : [];
+      const changed = nextBands.length !== bandHwList.length
+        || nextBands.some((b, i) => b.hardware !== bandHwList[i]?.hardware || b.ordinal !== bandHwList[i]?.ordinal);
+      if (changed) {
+        bandHwList = nextBands.slice().sort((a, b) => a.ordinal - b.ordinal);
+        renderBandButtons();
+      }
+
       const raw = s.rawGpio || 0;
       dial.mono = (raw >> 10) & 1;
       dial.power = (raw >> 9) & 1;
       dial.bt = (raw >> 8) & 1;
-
-      const bankRaw = (raw >> 4) & 0xF;
-      const subRaw = raw & 0xF;
-
-      // Find label from hardware value (reverse lookup). With the tuner
-      // active the sub-nibble is no longer a distinct rotary position, so
-      // it may not match any of the classic Sub 1..5 buttons — that's
-      // fine, we just leave the sub-button selection unchanged.
-      const bankLabel = Object.entries(bankLabelToHw).find(([, hw]) => hw === bankRaw);
-      const subLabel = Object.entries(subLabelToHw).find(([, hw]) => hw === subRaw);
-
-      dial.bank = bankLabel ? parseInt(bankLabel[0]) : 0;
-      dial.sub = subLabel ? parseInt(subLabel[0]) : dial.sub;
-
+      dial.bankHw = (raw >> 4) & 0xF;
       updateDialButtons();
     }
 
@@ -1014,7 +1008,7 @@
       fracEl.textContent = t.fraction != null ? (+t.fraction).toFixed(3) : '—';
 
       const channels = t.channelsInBand || [];
-      chEl.textContent = channels.length ? channels.map(c => c.number + ' ' + c.name).join(', ') : '(none in this band)';
+      chEl.textContent = channels.length ? channels.map(c => c.name).join(', ') : '(none in this band)';
 
       // Wedges: divide the track into equal segments per channel in the band
       if (channels.length > 0) {

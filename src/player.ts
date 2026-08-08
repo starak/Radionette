@@ -250,8 +250,15 @@ export function initPlayer(): void {
     scheduleStop();
   });
 
-  radioState.on("channel:change", (channel: ChannelInfo) => {
-    schedulePlay(channel);
+  radioState.on("channel:change", (channel: ChannelInfo | null) => {
+    if (channel) {
+      schedulePlay(channel);
+    } else {
+      // Silence — happens when the tuner is on a band with no channels,
+      // or when the physical rotary lands on an unmapped nibble.
+      console.log("[Player] Channel cleared — stopping playback.");
+      scheduleStop();
+    }
   });
 
   radioState.on("mode:radio", () => {

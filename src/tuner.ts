@@ -13,8 +13,10 @@
  *  - Convert raw → smoothed fraction in [0,1] across the calibrated
  *    span, handling wrap-around when the sweep straddles the 0/4095
  *    boundary.
- *  - Combine fraction + current band nibble (from gpio.ts) to pick a
+ *  - Combine fraction + current band ordinal (from gpio.ts) to pick a
  *    concrete channel from channels.json and call radioState.setChannel.
+ *    An empty band (no channels, or the hardware nibble maps to no
+ *    band) results in setChannel(null) — silence.
  *  - Monitor STATUS + AGC and log magnet-health transitions.
  *
  * Calibration file lives at ~/.radionette/tuner-calibration.json and is
@@ -63,10 +65,8 @@ const WEDGE_ENTRY_HYSTERESIS = 0.20;
 // Magnet-health check every N polls (poll is 50 ms; every 20 = 1 s).
 const HEALTH_CHECK_INTERVAL = 20;
 
-// Default calibration if no file exists yet. In 12-bit angle counts
-// (0..4095). Assumes the sweep straddles the wrap at 0/4095, which is
-// what the earlier monitor session showed (1955 → 4067). The debug UI
-// provides Set Min / Set Max buttons.
+// Default calibration if no file exists yet, in 12-bit angle counts
+// (0..4095). Real values come from calibrating via the debug UI.
 const DEFAULT_MIN_ANGLE = 1955;
 const DEFAULT_MAX_ANGLE = 4067;
 
@@ -104,10 +104,14 @@ let pollTick = 0;
 
 const rawHistory: number[] = [];
 
-let lastAppliedChannelNumber: number | null = null;
+let lastAppliedChannelId: string | null = null;
 let lastCommittedFraction: number | null = null;
 
-// Current band nibble, updated by gpio.ts via setTunerBand().
+/**
+ * Current band ordinal (from channels.json). 0 means "no band" — either
+ * gpio.ts hasn't reported anything yet, or the current hardware nibble
+ * maps to no configured band.
+ */
 let currentBand = 0;
 
 // Magnet-health hysteresis — only log transitions, not every poll.
@@ -127,26 +131,17 @@ function ensureCalibDir(): void {
 function loadCalibration(): void {
   try {
     const raw = fs.readFileSync(CALIB_FILE, "utf-8");
-    const parsed = JSON.parse(raw) as Partial<Calibration> & {
-      // Backwards compat with older ADC-based calibration
-      minRaw?: number;
-      maxRaw?: number;
-    };
-    // Prefer new field names; fall back to legacy names if present
-    const minAngle =
-      typeof parsed.minAngle === "number" ? parsed.minAngle : parsed.minRaw;
-    const maxAngle =
-      typeof parsed.maxAngle === "number" ? parsed.maxAngle : parsed.maxRaw;
+    const parsed = JSON.parse(raw) as Partial<Calibration>;
     if (
-      typeof minAngle === "number" &&
-      typeof maxAngle === "number" &&
-      minAngle !== maxAngle &&
-      minAngle >= 0 &&
-      maxAngle >= 0
+      typeof parsed.minAngle === "number" &&
+      typeof parsed.maxAngle === "number" &&
+      parsed.minAngle !== parsed.maxAngle &&
+      parsed.minAngle >= 0 &&
+      parsed.maxAngle >= 0
     ) {
       calib = {
-        minAngle,
-        maxAngle,
+        minAngle: parsed.minAngle,
+        maxAngle: parsed.maxAngle,
         invert: !!parsed.invert,
       };
       console.log(
@@ -191,16 +186,13 @@ function readAngle(): number | null {
 /**
  * Compute a smoothed angle in the RAW_ANGLE space (0..4095). Handles
  * the wrap point by unwrapping raw readings that straddle 0/4095
- * before averaging — otherwise a shaft sitting at 4090 would produce
- * a smoothed mean of ~2000 when the buffer briefly saw 10.
+ * before averaging.
  */
 function smoothAngle(raw: number): number {
   rawHistory.push(raw);
   if (rawHistory.length > SMOOTH_WINDOW) rawHistory.shift();
   if (rawHistory.length === 1) return raw;
 
-  // Unwrap relative to the first sample. Anything more than 2048 apart
-  // is treated as "on the other side of the wrap point" and shifted.
   const ref = rawHistory[0];
   let sum = 0;
   for (const v of rawHistory) {
@@ -210,20 +202,17 @@ function smoothAngle(raw: number): number {
     sum += ref + d;
   }
   const avg = sum / rawHistory.length;
-  // Re-wrap into [0, 4095]
   return ((avg % 4096) + 4096) % 4096;
 }
 
 /**
  * Convert a smoothed 12-bit angle (0..4095) into a fraction in [0,1]
- * across the calibrated sweep. Correctly handles the case where the
- * sweep straddles the 0/4095 wrap point (calibration min > max in
- * angle terms).
+ * across the calibrated sweep. Correctly handles calibrations that
+ * straddle the 0/4095 wrap point (minAngle > maxAngle in raw terms).
  */
 function angleToFraction(angle: number): number {
   const { minAngle, maxAngle, invert } = calib;
 
-  // Signed angular distance from minAngle around the short arc.
   const arcTo = (target: number): number => {
     let d = target - minAngle;
     if (d < 0) d += 4096;
@@ -234,14 +223,9 @@ function angleToFraction(angle: number): number {
   if (total === 0) return 0;
 
   let t = arcTo(angle) / total;
-  // If the angle is outside the calibrated arc, clamp to whichever end
-  // it's closer to. Anything past maxAngle in the forward direction
-  // stays at 1; anything behind minAngle stays at 0.
   if (t > 1) {
-    // Check whether we're on the "wrap around the other side" region
-    // — if so, decide 0 or 1 based on which end is closer.
-    const distToMin = 4096 - arcTo(angle); // distance going backwards
-    const distToMax = arcTo(angle) - total; // distance going forwards
+    const distToMin = 4096 - arcTo(angle);
+    const distToMax = arcTo(angle) - total;
     t = distToMax < distToMin ? 1 : 0;
   }
   if (t < 0) t = 0;
@@ -249,9 +233,10 @@ function angleToFraction(angle: number): number {
 }
 
 /**
- * Given a fractional needle position in [0,1] and the list of channels
- * available in the current band (sorted by channel number), return the
- * channel whose wedge contains the needle.
+ * Given a fractional needle position in [0,1] and a list of channels
+ * (pre-sorted by `order`), return the channel whose wedge contains
+ * the needle. Wedges are equal-width; a band of N channels fills the
+ * full 0..1 sweep regardless of N.
  */
 function pickChannelFromFraction(
   fraction: number,
@@ -278,8 +263,8 @@ function pickChannelWithHysteresis(
 ): ChannelInfo | null {
   const naive = pickChannelFromFraction(fraction, channels);
   if (!naive) return null;
-  if (lastAppliedChannelNumber === null) return naive;
-  if (naive.number === lastAppliedChannelNumber) return naive;
+  if (lastAppliedChannelId === null) return naive;
+  if (naive.id === lastAppliedChannelId) return naive;
 
   const wedgeWidth = 1 / channels.length;
   const naiveIdx = channels.indexOf(naive);
@@ -287,7 +272,7 @@ function pickChannelWithHysteresis(
   const depthIntoWedge = (fraction - wedgeStart) / wedgeWidth;
 
   const currentIdx = channels.findIndex(
-    (c) => c.number === lastAppliedChannelNumber
+    (c) => c.id === lastAppliedChannelId
   );
   if (currentIdx < 0) return naive;
 
@@ -296,7 +281,7 @@ function pickChannelWithHysteresis(
 
   if (inside < WEDGE_ENTRY_HYSTERESIS) {
     const current = channels.find(
-      (c) => c.number === lastAppliedChannelNumber
+      (c) => c.id === lastAppliedChannelId
     );
     return current ?? naive;
   }
@@ -327,6 +312,19 @@ function checkMagnetHealth(): void {
   }
 }
 
+/** Push channel=null through radioState if we're currently on something. */
+function commitSilence(): void {
+  if (lastAppliedChannelId !== null) {
+    if (radioState.state.mode === "radio" && radioState.state.power) {
+      console.log(
+        `[Tuner] band=${currentBand} has no channels — silence`
+      );
+    }
+    lastAppliedChannelId = null;
+    radioState.setChannel(null);
+  }
+}
+
 // ── Poll loop ──────────────────────────────────────────────────────────
 
 function pollTuner(): void {
@@ -339,14 +337,10 @@ function pollTuner(): void {
   const smoothed = smoothAngle(raw);
   const fraction = angleToFraction(smoothed);
 
-  // Broadcast the live fraction to the web UI regardless of whether the
-  // channel actually changes.
   radioState.setTuner(fraction, Math.round(smoothed), currentBand);
 
-  // Wait for the smoothing buffer to fill before committing to a channel.
   if (rawHistory.length < SMOOTH_WINDOW) return;
 
-  // Only reconsider the channel selection if the fraction moved enough.
   if (
     lastCommittedFraction !== null &&
     Math.abs(fraction - lastCommittedFraction) < FRACTION_HYSTERESIS
@@ -355,20 +349,28 @@ function pollTuner(): void {
   }
 
   const channels = channelsForBand(currentBand);
-  const pick = pickChannelWithHysteresis(fraction, channels);
-  if (!pick) return;
+  if (channels.length === 0) {
+    commitSilence();
+    lastCommittedFraction = fraction;
+    return;
+  }
 
-  if (pick.number !== lastAppliedChannelNumber) {
-    // Only log the "picked channel" line when the radio is actually in a
-    // state where the choice matters.
+  const pick = pickChannelWithHysteresis(fraction, channels);
+  if (!pick) {
+    commitSilence();
+    lastCommittedFraction = fraction;
+    return;
+  }
+
+  if (pick.id !== lastAppliedChannelId) {
     if (radioState.state.mode === "radio" && radioState.state.power) {
       console.log(
-        `[Tuner] band=${currentBand.toString(16)} fraction=${fraction.toFixed(
+        `[Tuner] band=${currentBand} fraction=${fraction.toFixed(
           3
-        )} → channel ${pick.number} – ${pick.name}`
+        )} → ${pick.id} (${pick.name})`
       );
     }
-    lastAppliedChannelNumber = pick.number;
+    lastAppliedChannelId = pick.id;
     radioState.setChannel(pick);
   }
   lastCommittedFraction = fraction;
@@ -377,14 +379,15 @@ function pollTuner(): void {
 // ── Public API ─────────────────────────────────────────────────────────
 
 /**
- * Update the current band nibble. Called from gpio.ts whenever the top
- * nibble of the channel selector switch changes.
+ * Update the current band ordinal. Called from gpio.ts whenever the top
+ * nibble of the channel selector switch changes. Pass 0 to signal
+ * "unmapped band" (silence).
  */
-export function setTunerBand(nibble: number): void {
-  const masked = nibble & 0x0f;
-  if (masked === currentBand) return;
-  currentBand = masked;
-  lastAppliedChannelNumber = null;
+export function setTunerBand(bandOrdinal: number): void {
+  const b = bandOrdinal | 0;
+  if (b === currentBand) return;
+  currentBand = b;
+  lastAppliedChannelId = null;
   lastCommittedFraction = null;
 }
 
@@ -401,7 +404,7 @@ export function calibrateTuner(kind: "min" | "max"): number | null {
   }
   saveCalibration();
   rawHistory.length = 0;
-  lastAppliedChannelNumber = null;
+  lastAppliedChannelId = null;
   lastCommittedFraction = null;
   return raw;
 }
@@ -413,7 +416,7 @@ export function invertTuner(invert: boolean): void {
   if (calib.invert === invert) return;
   calib.invert = invert;
   saveCalibration();
-  lastAppliedChannelNumber = null;
+  lastAppliedChannelId = null;
   lastCommittedFraction = null;
 }
 
@@ -422,27 +425,24 @@ export function invertTuner(invert: boolean): void {
  */
 export function tunerStatus(): {
   ready: boolean;
-  calibration: Calibration & { minRaw?: number; maxRaw?: number };
+  calibration: Calibration;
   latestRaw: number | null;
   fraction: number | null;
   band: number;
-  channelsInBand: Array<{ number: number; name: string }>;
+  channelsInBand: Array<{ id: string; name: string; order: number }>;
 } {
   const channels = channelsForBand(currentBand);
-  // Include legacy minRaw/maxRaw aliases so any existing debug UI or
-  // status consumers keep rendering.
-  const cal = {
-    ...calib,
-    minRaw: calib.minAngle,
-    maxRaw: calib.maxAngle,
-  };
   return {
     ready: !devMode && sensorPresent,
-    calibration: cal,
+    calibration: { ...calib },
     latestRaw: radioState.state.tunerRaw,
     fraction: radioState.state.tunerFraction,
     band: currentBand,
-    channelsInBand: channels.map((c) => ({ number: c.number, name: c.name })),
+    channelsInBand: channels.map((c) => ({
+      id: c.id,
+      name: c.name,
+      order: c.order,
+    })),
   };
 }
 
@@ -462,12 +462,9 @@ export function initTuner(): void {
 
   loadCalibration();
 
-  // Probe the AS5600 and read once. If the chip isn't on the bus we
-  // silently disable the tuner so gpio.ts falls back to the classic
-  // full-8-bit channel lookup.
   if (!i2cProbe(AS5600_ADDR)) {
     console.log(
-      "[Tuner] AS5600 not found at 0x36 — falling back to classic GPIO channel lookup"
+      "[Tuner] AS5600 not found at 0x36 — gpio.ts fallback will pick first channel in the current band"
     );
     devMode = true;
     return;
@@ -475,7 +472,6 @@ export function initTuner(): void {
   console.log("[Tuner] AS5600 found at 0x36");
   sensorPresent = true;
 
-  // Initial magnet-health snapshot
   const status = i2cReadReg(AS5600_ADDR, AS5600_REG_STATUS, 1);
   const agc = i2cReadReg(AS5600_ADDR, AS5600_REG_AGC, 1);
   const magnitude = i2cReadReg(AS5600_ADDR, AS5600_REG_MAGNITUDE, 2);

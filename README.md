@@ -118,7 +118,7 @@ The AS5600's DIR pin must be tied to a defined level. Tying it to GND selects on
 
 **Magnet:** a diametrically-magnetized disc (typically 6 mm × 3 mm) glued to the needle shaft, 0.5-3 mm above the AS5600 IC surface. The `/debug` Tuner panel captures the two mechanical endpoints (as 12-bit angle counts, 0..4095) and stores them in `~/.radionette/tuner-calibration.json`. The tuner correctly handles calibrations that straddle the 0/4095 wrap point.
 
-**How tuning works:** the top nibble (bits 7-4) of the existing 8-bit rotary selector switch chooses the band (FM/AM/SW/...); the AS5600 needle angle then picks a station within that band by dividing the calibrated sweep into equal wedges (one per station currently in the band). When the AS5600 is missing or uncalibrated the code falls back to the pre-tuner behaviour where the full 8-bit switch value selects a channel directly from `channels.json`.
+**How tuning works:** the top nibble (bits 7-4) of the existing 8-bit rotary selector switch chooses the band via the `bands` table in `channels.json`; the AS5600 needle angle then picks a station within that band by dividing the calibrated sweep into equal wedges (one per station currently in the band). When the AS5600 is missing or uncalibrated the code falls back to playing the first channel (by `order`) in the current band, so the radio always has something to play as long as the band has at least one station. Physical rotary positions whose hardware nibble doesn't match any declared band are silent.
 
 **Magnet health:** the tuner polls the AS5600 STATUS register once per second and logs transitions (`OK` ↔ `TOO WEAK` / `TOO STRONG` / `NOT DETECTED`) along with the AGC value. If the magnet falls out of alignment or drops off entirely, you'll see a `[Tuner] AS5600 magnet OK → NOT DETECTED` log line and the fraction reading will freeze at the last-known value.
 
@@ -234,20 +234,30 @@ Some files contain settings specific to this setup that you'll want to adapt:
 
 ## Configuring Stations
 
-Edit `channels.json` to add or change radio stations. Each entry maps a dial position (GPIO bits 0-7 decimal value) to a station:
+Edit `channels.json`. The file has two top-level arrays: `bands` and `channels`.
 
 ```json
 {
-  "channels": {
-    "192": { "name": "NRK P1", "url": "https://lyd.nrk.no/...", "logo": "NRK-P1.png" },
-    "48":  { "name": "Radio Rock", "url": "https://live-bauerno.sharp-stream.com/...", "logo": "RadioRock.png" }
-  }
+  "bands": [
+    { "ordinal": 1, "hardware": 12, "name": "Band 1" },
+    { "ordinal": 2, "hardware": 8,  "name": "Band 2" },
+    { "ordinal": 3, "hardware": 10, "name": "Band 3" },
+    { "ordinal": 4, "hardware": 3,  "name": "Band 4" }
+  ],
+  "channels": [
+    { "id": "nrk-p1",     "band": 1, "order": 10,  "name": "NRK P1",       "url": "https://lyd.nrk.no/...", "logo": "NRK-P1.png" },
+    { "id": "bbc-r1",     "band": 1, "order": 200, "name": "BBC Radio 1",  "url": "https://as-hls-ww-live.akamaized.net/...", "logo": "BBC-Radio-1.png" },
+    { "id": "radio-rock", "band": 2, "order": 10,  "name": "Radio Rock",   "url": "https://live-bauerno.sharp-stream.com/...", "logo": "RadioRock.png" }
+  ]
 }
 ```
 
-The optional `logo` field is a filename (PNG or GIF) under `assets/channel-logos/`; if omitted or missing on disk, `default.png` is shown on the round display.
+- **Bands** are the physical rotary switch positions. `ordinal` is the logical band number used in code and UI. `hardware` is the raw top-nibble (0..15) the physical rotary produces for this band. `name` is a human label.
+- **Channels** each reference a `band` ordinal and carry an `order` value that decides where the station falls on the tuner's needle sweep — the AS5600 divides the sweep into equal wedges (one per channel in the current band) and stations are laid out in increasing `order` from the CCW end to the CW end. Sparse values (10, 20, 30, ...) let you insert new stations between existing ones without renumbering.
+- **`id`** is a stable string identifier used in logs and in the state broadcast.
+- **`logo`** is a filename (PNG or GIF) under `assets/channel-logos/`; if omitted or the file is missing, `default.png` is shown on the round display.
 
-The channel number is composed of two nibbles: bits 7-4 select the bank, bits 3-0 select the sub-channel within the bank. See the debug page (`/debug`) for a visual breakdown.
+There is **no cap** on channels per band — 4 channels or 40, the needle fills the full sweep either way. Bands with no channels are silent. Physical rotary positions whose hardware nibble doesn't match any declared band are also silent.
 
 **Supported stream types:**
 

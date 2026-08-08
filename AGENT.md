@@ -7,7 +7,7 @@ Internet radio controller for Raspberry Pi 4 Model B. Reads physical radio dial 
 ### Hardware
 - **Raspberry Pi 4 Model B**
 - **11 GPIO input pins** from a physical rotary dial switch and mono switch
-  - Bits 0-7 (GPIO 18, 23, 24, 25, 5, 7, 12, 16): Channel selector — 15 unique positions across two banks
+  - Bits 0-7 (GPIO 18, 23, 24, 25, 5, 7, 12, 16): Channel selector — top nibble picks a band (from `channels.json`), bottom nibble is ignored when the AS5600 tuner is active
   - Bit 8 (GPIO 20): Bluetooth indicator
   - Bit 9 (GPIO 21): Power indicator
   - Bit 10 (GPIO 19): Stereo switch (LOW = mono [default, fail-safe], HIGH = stereo). Bit is inverted in software so an open/disconnected switch defaults to mono.
@@ -46,20 +46,20 @@ Power ON + Bluetooth OFF
 |---|---|
 | `src/index.ts` | Entry point — wires modules: channels -> player -> bluetooth -> hotspot-alert -> web -> adc -> tuner -> gpio -> volume -> display |
 | `src/state.ts` | Central state singleton + EventEmitter. All modules communicate through this. |
-| `src/gpio.ts` | Reads 11 input pins every 10ms, debounces (50ms), drives state machine, controls LED outputs. When the tuner is active, sends the top nibble of the channel-selector switch to `tuner.ts` as the current band and lets the tuner pick the concrete station; falls back to the classic full-8-bit lookup when the tuner isn't available. Exports `injectGpioValue()` for virtual dial API and `resetGpioOverride()` to revert to physical pins. |
-| `src/channels.ts` | Loads `channels.json` at startup. Looks up channel number -> name + URL. `channelsForBand(nibble)` enumerates channels sharing a top nibble for the tuner's wedge layout. |
+| `src/gpio.ts` | Reads 11 input pins every 10ms, debounces (50ms), drives state machine, controls LED outputs. Translates the top nibble of the physical channel-selector switch to a band ordinal via `bandForHardware()` and pushes it to `tuner.ts`. When the tuner is active, gpio.ts stays out of channel selection; when the tuner is inactive, gpio.ts calls `setChannel(channelsForBand(band)[0] ?? null)` — first-by-order fallback, or silence for empty/unmapped bands. Exports `injectGpioValue()` for virtual dial API and `resetGpioOverride()` to revert to physical pins. |
+| `src/channels.ts` | Loads `channels.json` at startup. Validates and indexes bands (by ordinal and by hardware nibble) and channels (by id and by band). Helpers: `channelsForBand(ordinal)` (pre-sorted by `order`), `bandForHardware(nibble)`, `channelById(id)`, `getAllBands()`, `getAllChannels()`. |
 | `src/player.ts` | Picks `/usr/bin/mpg123` (direct MP3/icecast) or `/usr/bin/ffmpeg` (HLS `.m3u8`) per URL and spawns/kills the chosen process. Parses ICY stream metadata (mpg123) and stream-title lines (ffmpeg). Reacts to state events. Auto-retries with escalating backoff (5s, 10s, 30s) when stream fails and desired channel is still set. |
 | `src/bluetooth.ts` | Full Bluetooth A2DP sink management — enable/disable adapter, pairing agent, device monitoring, volume boost, flap detection, auto-reconnect, notification sounds. |
 | `src/audio.ts` | Mono/stereo audio mixing via PulseAudio `module-remap-sink`. Creates per-sink remap-sinks for all real sinks (ALSA + BT). Spawns `pactl subscribe` to dynamically handle new BT sinks and new sink-inputs. Listens for `mono:on`/`mono:off` events from GPIO. |
 | `src/adc.ts` | Shared ADS1115 service on `/dev/i2c-1`. Opens the fd once at boot, offers `readAdcChannel(mux)` for callers to read AIN0..AIN3 in single-shot mode. Consumed by `volume.ts` (AIN0) and `tuner.ts` (AIN1). |
 | `src/volume.ts` | Volume control. Reads AIN0 via `adc.ts` every 100 ms, applies a 10-sample rolling average, maps knob 1-100% onto PulseAudio 20-100% (bottom-floor to sit above the amp's audible threshold). Falls back to dev mode when the ADC isn't available. |
-| `src/tuner.ts` | AS5600 magnetic angle sensor read directly over I2C at 0x36 (shares the ADS1115 bus). Polls RAW_ANGLE every 50 ms, smooths with wrap-aware unwrapping, converts to a fraction 0..1 across the calibrated sweep, combines with the current band nibble from `gpio.ts` to pick a channel from `channels.json` via `channelsForBand()`. Two-point calibration in 12-bit angle counts persisted to `~/.radionette/tuner-calibration.json`; `invert` flag for reversed rotation. Monitors STATUS + AGC and logs magnet-health transitions. Falls back silently when the sensor isn't on the bus. |
+| `src/tuner.ts` | AS5600 magnetic angle sensor read directly over I2C at 0x36 (shares the ADS1115 bus). Polls RAW_ANGLE every 50 ms, smooths with wrap-aware unwrapping, converts to a fraction 0..1 across the calibrated sweep, combines with the current band ordinal from `gpio.ts` to pick a channel from `channels.json` via `channelsForBand()`. Empty band → `setChannel(null)` (silence). Two-point calibration in 12-bit angle counts persisted to `~/.radionette/tuner-calibration.json`; `invert` flag for reversed rotation. Monitors STATUS + AGC and logs magnet-health transitions. Falls back silently when the sensor isn't on the bus. |
 | `src/web.ts` | HTTP server (port 8080) + WebSocket. Serves status page, WiFi settings page, and WiFi API endpoints. System management endpoints (WiFi reset, reboot). Tuner endpoints (`GET /api/tuner`, `POST /api/tuner/calibrate`, `POST /api/tuner/invert`). Pushes live state to all connected clients. |
 | `src/wifi.ts` | WiFi management via `nmcli` — scan for networks, connect (triggers playback retry on success), start/stop hotspot, hotspot detection, WiFi reset, system reboot. Write operations use `sudo nmcli`. Falls back to mock data in dev mode. |
 | `src/hotspot-alert.ts` | Periodic bleep alert when hotspot is active in radio mode. Uses `aplay` (ALSA) for early-boot compatibility before PulseAudio starts. Polls hotspot status every 5s, loops `hotspot-bleep.wav` via aplay. |
-| `src/public/index.html` | Single-file status page with inline CSS/JS. Dark theme (neutral grey palette via CSS custom properties), live WebSocket updates, tab navigation (Status / WiFi / Debug). Channel list grouped by bank with bank headers. |
+| `src/public/index.html` | Single-file status page with inline CSS/JS. Dark theme (neutral grey palette via CSS custom properties), live WebSocket updates, tab navigation (Status / WiFi / Debug). Channel list grouped by band using names from the server-sent `bands` array, sorted by `order` within each band. |
 | `src/public/wifi.html` | Single-file WiFi settings page with inline CSS/JS. Same dark theme, tab navigation. Network scan list with signal bars, connect modal with password field, AP-mode warning. |
-| `src/public/debug.html` | Single-file debug page with inline CSS/JS. Same dark theme, tab navigation. Color-coded GPIO bit display (green=power, blue=bluetooth, amber=bank/sub), decoded bank/sub values, virtual dial controls (PWR, BT, Bank, Sub buttons that inject GPIO values via API — physical dial overrides, reset-to-physical button clears override), channel info table, full state dump table, grouped channel map. System card with WiFi reset and reboot buttons. Live WebSocket updates. |
+| `src/public/debug.html` | Single-file debug page with inline CSS/JS. Same dark theme, tab navigation. Color-coded GPIO bit display (green=power, blue=bluetooth, amber=bank/sub), decoded band from the server-sent `bands` array, raw sub-nibble shown as informational. Virtual dial controls (PWR, BT, Band, Mono) — Band buttons rendered dynamically from the `bands` array. Physical dial overrides via `/api/debug/gpio`; reset-to-physical button clears override. Channel info table, full state dump table, channel map grouped by band and sorted by `order`. Tuner card with live needle + calibrate/invert. System card with WiFi reset and reboot buttons. Live WebSocket updates. |
 | `src/gpio-logger.ts` | Standalone utility — logs raw GPIO values on change for mapping physical dial positions. |
 | `src/display.ts` | Low-level GC9A01 SPI driver. `initDisplay`, `drawRgb565Buffer`, `fillScreen`, `testPattern`, `stopDisplay`. Uses `spi-device` + `rpio`. Closes GPIO with `PIN_PRESERVE` on shutdown so the last frame stays visible. |
 | `src/render/frame.ts` | Pixel-format helpers — RGBA8888 -> RGB565 big-endian, solid-colour frame builder. |
@@ -68,7 +68,7 @@ Power ON + Bluetooth OFF
 | `src/display-service.ts` | Glue between `radioState` events and `displayController`. State -> logo mapping: power off = black; bluetooth + no device = `bluetooth.png`; bluetooth + connected = `bluetooth-connected.png`; radio + channel = `channel.logo` (or `default.png`). |
 | `src/scripts/display-smoke.ts` | Hardware smoke test — red/green/blue/RGBW bars cycle. Run with `npm run smoke-display` on the Pi. |
 | `src/scripts/display-render-test.ts` | Render pipeline test — cycles through every channel logo + BT logos + default fallback. Run with `npm run render-test` on the Pi. |
-| `channels.json` | Channel configuration — maps dial position numbers to station name + stream URL + optional `logo` filename (relative to `assets/channel-logos/`). Edit this to change stations. |
+| `channels.json` | Channel configuration — `bands` array declares logical bands and their physical top-nibble mapping; `channels` array lists stations by stable `id`, referencing a band and a sparse `order` for tuner wedge layout. Edit this to change stations. |
 | `wifi-fallback.sh` | Boot script — waits 30s for WiFi, starts hotspot if no connection. Installed as a systemd service by `setup-pi.sh`. |
 | `assets/bt-connect.wav` | Ascending two-tone chime played when a Bluetooth device connects. |
 | `assets/bt-ready.wav` | Soft single tone played when BT mode activates or a device disconnects. |
@@ -98,24 +98,17 @@ Events emitted by state.ts:
 
 ### Channel Config
 
-`channels.json` maps GPIO bits 0-7 decimal values to streams. The channel number is composed of two nibbles:
+`channels.json` has two top-level arrays: `bands` and `channels`.
 
-- **Bits 7-4:** Bank selector (hardware value -> label)
-  - `12` (0b1100) = Bank 1: NRK P1, P1+, P2, Klassisk, Nyheter
-  - `8` (0b1000) = Bank 2: NRK P3, P3 Musikk, P13, mP3, Jazz
-  - `10` (0b1010) = Bank 3: NRK Folkemusikk, Sámi Radio, P4, P5, P7
-  - `3` (0b0011) = Bank 4: Radio Rock, IRock 247, P11 Bandit, NRJ, P10 Country
+- **`bands[]`**: `{ ordinal, hardware, name }`. `ordinal` is the logical band number used everywhere in code and UI. `hardware` is the top-nibble value (0..15) the physical rotary switch produces for this band. `name` is human-facing. Any hardware nibble that has no band entry is unmapped (radio is silent when the switch lands there).
 
-- **Bits 3-0:** Sub-channel selector (hardware value -> label)
-  - `0` (0b0000) = Sub 1
-  - `1` (0b0001) = Sub 2
-  - `8` (0b1000) = Sub 3
-  - `10` (0b1010) = Sub 4
-  - `12` (0b1100) = Sub 5
+- **`channels[]`**: `{ id, band, order, name, url, logo? }`. `id` is a stable string identifier used in logs and in the state broadcast. `band` references a band `ordinal`. `order` is a sparse sort key inside the band (10, 20, 30, ...) that decides where the station falls on the AS5600 needle sweep. `url` and `logo` are unchanged.
 
-Example: Channel key `192` = 0b**1100**_0000 = Bank 1 (`12`), Sub 1 (`0`) = NRK P1.
+No cap on channels per band. The tuner divides the calibrated needle sweep into equal wedges (one per channel in the current band) so 4 channels get four 25% wedges and 30 channels get thirty ~3.3% wedges — the full sweep is always filled edge-to-edge regardless of channel count. Bands with no channels produce silence.
 
-Add any HTTP/MP3 stream URL. No rebuild needed — just edit the file and restart.
+When the AS5600 isn't active (dev mode, chip missing, wire broken), `gpio.ts` falls back to playing the first channel by `order` in the current band. A band with no channels still results in silence.
+
+Add any HTTP/MP3 or HLS URL. No rebuild needed — just edit the file and restart.
 
 ### Player Details
 
@@ -201,7 +194,7 @@ The tuner module (`src/tuner.ts`) uses an **AS5600** magnetic angle sensor on th
 - **Poll interval:** 50 ms (`TUNER_POLL_MS`)
 - **Smoothing:** 6-sample rolling mean of the 12-bit angle (300 ms window). The smoother unwraps readings that straddle the 0/4095 boundary before averaging.
 - **Calibration:** two-point (min angle ↔ max angle) captured via `POST /api/tuner/calibrate {kind:"min"|"max"}`, persisted to `~/.radionette/tuner-calibration.json` as `{minAngle, maxAngle, invert}` in 12-bit angle counts. `angleToFraction()` handles calibrations where the sweep straddles the wrap point (min > max in raw terms).
-- **Fraction → channel:** the current band nibble (top 4 bits of the classic 8-bit channel switch) is passed in from `gpio.ts` via `setTunerBand()`. The list of channels whose top nibble matches becomes the wedge layout; the fraction picks a wedge with two layers of hysteresis (fractional deadband + wedge-entry hysteresis) to prevent flicker at boundaries.
+- **Fraction → channel:** the current band ordinal is passed in from `gpio.ts` via `setTunerBand()` (already translated from the raw hardware nibble by `channels.ts:bandForHardware()`). `channelsForBand(ordinal)` returns the channels in that band pre-sorted by `order`; the fraction picks a wedge with two layers of hysteresis (fractional deadband + wedge-entry hysteresis) to prevent flicker at boundaries. An empty band → `setChannel(null)` → the player stops and the display falls back to `default.png`.
 - **Magnet health:** once per second the tuner reads STATUS (MD/ML/MH) and logs any transition (`OK` ↔ `TOO WEAK` / `TOO STRONG` / `NOT DETECTED`) with the AGC value. Startup logs an initial magnet snapshot with STATUS, AGC and MAGNITUDE.
 - **State broadcast:** every poll pushes `tunerFraction`, `tunerRaw` (in 12-bit angle counts) and `tunerBand` into `radioState`; the debug page renders a live 180° needle with wedge markers per band.
 - **Fallback:** `isTunerActive()` returns false when the ADC/I2C isn't available or the AS5600 doesn't respond at 0x36. In that state `gpio.ts` falls back to the classic `lookupChannel(rawGpio & 0xFF)` path so the radio still works without an AS5600.
@@ -301,7 +294,7 @@ All HTML pages are single-file with inline CSS and JS (no external dependencies)
 - **Tab navigation** below the title: `Status | WiFi | Debug` — active tab highlighted in `--accent` with underline
 - **Title:** `<h1><a href="/">RADIONETTE</a></h1>` (white `#fff`)
 - **Cards:** `.status-card` or `.card` class — dark card with rounded corners and border
-- **Channel lists** are sorted and grouped by bank (1-4) with amber bank headers, sub-channel number (1-5) shown instead of raw GPIO values
+- **Channel lists** are grouped by band using names from the server-sent `bands` array, sorted by `order` within each band; the row shows the sparse `order` value as a hint (10, 20, …)
 
 ## Development
 

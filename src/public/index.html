@@ -316,36 +316,33 @@
         $('playing-info').style.display = 'none';
       }
 
-      // Channel list — grouped by bank, sorted by tuner wedge order
-      // (full channel number) within each bank.
-      const bankMap = { 12: 1, 8: 2, 10: 3, 3: 4 };
-      const subLabelForRaw = (subRaw) => subRaw;
+      // Channel list — grouped by band, sorted by `order` within each
+      // band. Band names come from the server-sent `bands` array.
+      const bandsList = Array.isArray(s.bands) ? s.bands : [];
+      const bandByOrdinal = new Map(bandsList.map(b => [b.ordinal, b]));
 
       if (s.channels) {
         const list = $('channel-list');
         list.innerHTML = '';
         const sorted = s.channels.slice().sort((a, b) => {
-          const aBank = bankMap[(a.number >> 4) & 0xF] || 99;
-          const bBank = bankMap[(b.number >> 4) & 0xF] || 99;
-          if (aBank !== bBank) return aBank - bBank;
-          return a.number - b.number;
+          if (a.band !== b.band) return a.band - b.band;
+          return a.order - b.order;
         });
-        let lastBank = null;
+        let lastBand = null;
         sorted.forEach(ch => {
-          const bLabel = bankMap[(ch.number >> 4) & 0xF] || '?';
-          const sLabel = subLabelForRaw(ch.number & 0xF);
-          if (bLabel !== lastBank) {
+          if (ch.band !== lastBand) {
+            const bandInfo = bandByOrdinal.get(ch.band);
             const hdr = document.createElement('li');
             hdr.className = 'bank-header';
-            hdr.textContent = bLabel === '?' ? 'Unmapped' : 'Bank ' + bLabel;
+            hdr.textContent = bandInfo ? bandInfo.name : 'Band #' + ch.band;
             list.appendChild(hdr);
-            lastBank = bLabel;
+            lastBand = ch.band;
           }
           const li = document.createElement('li');
-          if (s.channel && s.channel.number === ch.number) {
+          if (s.channel && s.channel.id === ch.id) {
             li.className = 'active';
           }
-          li.innerHTML = `<span class="ch-num">${sLabel}</span><span class="ch-name">${ch.name}</span>`;
+          li.innerHTML = `<span class="ch-num">${ch.order}</span><span class="ch-name">${ch.name}</span>`;
           list.appendChild(li);
         });
       }

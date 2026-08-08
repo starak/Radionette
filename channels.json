@@ -1,112 +1,31 @@
 {
-  "_comment": "Channel map: key is the decimal value of GPIO bits 0-7 (channel selector). Top nibble = band (Bank 1 = 0xC, Bank 2 = 0x8, Bank 3 = 0xA, Bank 4 = 0x3). Bottom nibble = tuner wedge order within the band. 0 is the debug channel.",
-  "channels": {
-    "0": {
-      "name": "Radio Rock",
-      "url": "https://live-bauerno.sharp-stream.com/simulcast3_no.mp3",
-      "logo": "RadioRock.png"
-    },
-
-    "192": {
-      "name": "NRK P1",
-      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p1_dk8",
-      "logo": "NRK-P1.png"
-    },
-    "193": {
-      "name": "NRK P1+",
-      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p1pluss",
-      "logo": "NRK-P1Pluss.png"
-    },
-    "194": {
-      "name": "NRK P2",
-      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p2",
-      "logo": "NRK-P2.png"
-    },
-    "195": {
-      "name": "NRK P3",
-      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p3",
-      "logo": "NRK-P3.png"
-    },
-    "196": {
-      "name": "NRK P3 Musikk",
-      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p3musikk",
-      "logo": "NRK-P3Musikk.png"
-    },
-    "197": {
-      "name": "NRK mP3",
-      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/mp3",
-      "logo": "NRK-MP3.png"
-    },
-    "198": {
-      "name": "NRK Jazz",
-      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/jazz",
-      "logo": "NRK-Jazz.png"
-    },
-    "199": {
-      "name": "NRK Klassisk",
-      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/klassisk",
-      "logo": "NRK-Klassisk.png"
-    },
-    "200": {
-      "name": "NRK Nyheter",
-      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/nyheter",
-      "logo": "NRK-Nyheter.png"
-    },
-    "201": {
-      "name": "P4 Lyden av Norge",
-      "url": "https://p4.p4groupaudio.com/P04_MH",
-      "logo": "P4.png"
-    },
-    "202": {
-      "name": "P5 Hits",
-      "url": "https://p5.p4groupaudio.com/P05_MH",
-      "logo": "P5.png"
-    },
-    "203": {
-      "name": "P6 Rock",
-      "url": "https://p6.p4groupaudio.com/P06_MH",
-      "logo": "P6.png"
-    },
-    "204": {
-      "name": "P7 Klem",
-      "url": "https://p7.p4groupaudio.com/P07_MH",
-      "logo": "P7.png"
-    },
-    "205": {
-      "name": "P8 Pop",
-      "url": "https://p8.p4groupaudio.com/P08_MH",
-      "logo": "P8.png"
-    },
-    "206": {
-      "name": "P9 Retro",
-      "url": "https://p9.p4groupaudio.com/P09_MH",
-      "logo": "P9.png"
-    },
-    "207": {
-      "name": "BBC Radio 1",
-      "url": "https://as-hls-ww-live.akamaized.net/pool_01505109/live/ww/bbc_radio_one/bbc_radio_one.isml/bbc_radio_one-audio%3d96000.norewind.m3u8",
-      "logo": "BBC-Radio-1.png"
-    },
-
-    "128": {
-      "name": "Radio Rock",
-      "url": "https://live-bauerno.sharp-stream.com/simulcast3_no.mp3",
-      "logo": "RadioRock.png"
-    },
-    "129": {
-      "name": "IRock 247",
-      "url": "https://streamer.radio.co/s493283a7e/listen",
-      "logo": "iRock247.png"
-    },
-    "130": {
-      "name": "P10 Country",
-      "url": "https://p10.p4groupaudio.com/P10_MH",
-      "logo": "P10.png"
-    },
-    "131": {
-      "name": "Radio Norge",
-      "url": "https://live-bauerno.sharp-stream.com/simulcast5_no.mp3",
-      "logo": "radio-norge.png"
-    }
-  }
+  "_comment": "Channel map. Bands are keyed by ordinal (1..N) and mapped to a physical rotary top-nibble via `hardware`. Channels reference a band by ordinal and are sorted within the band by `order` (sparse: 10, 20, 30, ...). `id` is the stable identity used in logs and state.",
+  "bands": [
+    { "ordinal": 1, "hardware": 12, "name": "Band 1" },
+    { "ordinal": 2, "hardware": 8,  "name": "Band 2" },
+    { "ordinal": 3, "hardware": 10, "name": "Band 3" },
+    { "ordinal": 4, "hardware": 3,  "name": "Band 4" }
+  ],
+  "channels": [
+    { "id": "nrk-p1",       "band": 1, "order": 10,  "name": "NRK P1",             "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p1_dk8",      "logo": "NRK-P1.png" },
+    { "id": "nrk-p1p",      "band": 1, "order": 20,  "name": "NRK P1+",            "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p1pluss",    "logo": "NRK-P1Pluss.png" },
+    { "id": "nrk-p2",       "band": 1, "order": 30,  "name": "NRK P2",             "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p2",         "logo": "NRK-P2.png" },
+    { "id": "nrk-p3",       "band": 1, "order": 40,  "name": "NRK P3",             "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p3",         "logo": "NRK-P3.png" },
+    { "id": "nrk-p3-musikk","band": 1, "order": 50,  "name": "NRK P3 Musikk",      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p3musikk",   "logo": "NRK-P3Musikk.png" },
+    { "id": "nrk-mp3",      "band": 1, "order": 60,  "name": "NRK mP3",            "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/mp3",        "logo": "NRK-MP3.png" },
+    { "id": "nrk-jazz",     "band": 1, "order": 70,  "name": "NRK Jazz",           "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/jazz",       "logo": "NRK-Jazz.png" },
+    { "id": "nrk-klassisk", "band": 1, "order": 80,  "name": "NRK Klassisk",       "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/klassisk",   "logo": "NRK-Klassisk.png" },
+    { "id": "nrk-nyheter",  "band": 1, "order": 90,  "name": "NRK Nyheter",        "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/nyheter",    "logo": "NRK-Nyheter.png" },
+    { "id": "p4",           "band": 1, "order": 100, "name": "P4 Lyden av Norge",  "url": "https://p4.p4groupaudio.com/P04_MH",                        "logo": "P4.png" },
+    { "id": "p5",           "band": 1, "order": 110, "name": "P5 Hits",            "url": "https://p5.p4groupaudio.com/P05_MH",                        "logo": "P5.png" },
+    { "id": "p6",           "band": 1, "order": 120, "name": "P6 Rock",            "url": "https://p6.p4groupaudio.com/P06_MH",                        "logo": "P6.png" },
+    { "id": "p7",           "band": 1, "order": 130, "name": "P7 Klem",            "url": "https://p7.p4groupaudio.com/P07_MH",                        "logo": "P7.png" },
+    { "id": "p8",           "band": 1, "order": 140, "name": "P8 Pop",             "url": "https://p8.p4groupaudio.com/P08_MH",                        "logo": "P8.png" },
+    { "id": "p9",           "band": 1, "order": 150, "name": "P9 Retro",           "url": "https://p9.p4groupaudio.com/P09_MH",                        "logo": "P9.png" },
+    { "id": "p10",          "band": 1, "order": 160, "name": "P10 Country",        "url": "https://p10.p4groupaudio.com/P10_MH",                       "logo": "P10.png" },
+    { "id": "radio-rock",   "band": 1, "order": 170, "name": "Radio Rock",         "url": "https://live-bauerno.sharp-stream.com/simulcast3_no.mp3",   "logo": "RadioRock.png" },
+    { "id": "irock-247",    "band": 1, "order": 180, "name": "IRock 247",          "url": "https://streamer.radio.co/s493283a7e/listen",               "logo": "iRock247.png" },
+    { "id": "radio-norge",  "band": 1, "order": 190, "name": "Radio Norge",        "url": "https://live-bauerno.sharp-stream.com/simulcast5_no.mp3",   "logo": "radio-norge.png" },
+    { "id": "bbc-r1",       "band": 1, "order": 200, "name": "BBC Radio 1",        "url": "https://as-hls-ww-live.akamaized.net/pool_01505109/live/ww/bbc_radio_one/bbc_radio_one.isml/bbc_radio_one-audio%3d96000.norewind.m3u8", "logo": "BBC-Radio-1.png" }
+  ]
 }
