@@ -208,9 +208,9 @@ The tuner module (`src/tuner.ts`) uses an **AS5600** magnetic angle sensor on th
 - **Uses absolute path** for the persistence file: `${HOME}/.radionette/tuner-calibration.json`.
 - **Legacy compat:** `loadCalibration()` accepts old `minRaw`/`maxRaw` field names from the pre-I2C ADC-mode branch of this feature so a stale calibration file doesn't break startup; the file is rewritten with the new `minAngle`/`maxAngle` keys on next save.
 
-#### `src/scripts/as5600-burn.ts` — retired
+#### `src/scripts/as5600-monitor.ts`
 
-An earlier iteration of this feature drove the AS5600 in analog mode via the ADS1115 AIN1 and needed a one-shot OTP burn to make analog its power-up default. The burn script (`npm run as5600-burn`) is still present in the repo for reference but is no longer part of the standard bring-up procedure — the current I2C-based tuner needs no chip configuration at all.
+Standalone diagnostic script. Prints RAW_ANGLE, degrees, magnet STATUS, AGC and magnitude every 100 ms while you sweep the shaft; tracks session min/max and prints a span summary on Ctrl-C. Useful for spot-checking magnet placement and finding the actual mechanical endpoints before calibrating. Run as `npm run as5600-monitor` on the Pi after stopping the app so the I2C bus isn't contended.
 
 ### WiFi Details
 

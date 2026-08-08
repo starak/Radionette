@@ -298,24 +298,6 @@ export function i2cProbe(addr: number): boolean {
 }
 
 /**
- * Write bytes to a device on the bus. First byte is typically the
- * register address, followed by data bytes. Returns true on success.
- * Fails silently — callers decide whether to log.
- */
-export function i2cWriteTo(addr: number, bytes: Buffer | number[]): boolean {
-  if (i2cFd === null || !ioctl) return false;
-  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
-  try {
-    ioctl(i2cFd, I2C_SLAVE, addr);
-    currentSlave = addr;
-    writeSync(i2cFd, buf);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Register-read pattern: write a single register-address byte, then
  * read `length` bytes back. Returns the read bytes as a Buffer, or
  * null on failure. Fails silently — callers decide whether to log.
