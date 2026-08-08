@@ -1,5 +1,5 @@
 {
-  "_comment": "Channel map: key is the decimal value of GPIO bits 0-7 (channel selector). 0 is the debug channel :)",
+  "_comment": "Channel map: key is the decimal value of GPIO bits 0-7 (channel selector). Top nibble = band (Bank 1 = 0xC, Bank 2 = 0x8, Bank 3 = 0xA, Bank 4 = 0x3). Bottom nibble = tuner wedge order within the band. 0 is the debug channel.",
   "channels": {
     "0": {
       "name": "Radio Rock",
@@ -17,95 +17,93 @@
       "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p1pluss",
       "logo": "NRK-P1Pluss.png"
     },
-    "200": {
+    "194": {
       "name": "NRK P2",
       "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p2",
       "logo": "NRK-P2.png"
     },
-    "202": {
-      "name": "NRK Klassisk",
-      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/klassisk",
-      "logo": "NRK-Klassisk.png"
-    },
-    "204": {
-      "name": "NRK Nyheter",
-      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/nyheter",
-      "logo": "NRK-Nyheter.png"
-    },
-
-    "128": {
+    "195": {
       "name": "NRK P3",
       "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p3",
       "logo": "NRK-P3.png"
     },
-    "129": {
+    "196": {
       "name": "NRK P3 Musikk",
       "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p3musikk",
       "logo": "NRK-P3Musikk.png"
     },
-    "136": {
+    "197": {
       "name": "NRK mP3",
       "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/mp3",
       "logo": "NRK-MP3.png"
     },
-    "138": {
+    "198": {
       "name": "NRK Jazz",
       "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/jazz",
       "logo": "NRK-Jazz.png"
     },
-    "140": {
+    "199": {
+      "name": "NRK Klassisk",
+      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/klassisk",
+      "logo": "NRK-Klassisk.png"
+    },
+    "200": {
+      "name": "NRK Nyheter",
+      "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/nyheter",
+      "logo": "NRK-Nyheter.png"
+    },
+    "201": {
+      "name": "P4 Lyden av Norge",
+      "url": "https://p4.p4groupaudio.com/P04_MH",
+      "logo": "P4.png"
+    },
+    "202": {
+      "name": "P5 Hits",
+      "url": "https://p5.p4groupaudio.com/P05_MH",
+      "logo": "P5.png"
+    },
+    "203": {
+      "name": "P6 Rock",
+      "url": "https://p6.p4groupaudio.com/P06_MH",
+      "logo": "P6.png"
+    },
+    "204": {
+      "name": "P7 Klem",
+      "url": "https://p7.p4groupaudio.com/P07_MH",
+      "logo": "P7.png"
+    },
+    "205": {
+      "name": "P8 Pop",
+      "url": "https://p8.p4groupaudio.com/P08_MH",
+      "logo": "P8.png"
+    },
+    "206": {
+      "name": "P9 Retro",
+      "url": "https://p9.p4groupaudio.com/P09_MH",
+      "logo": "P9.png"
+    },
+    "207": {
       "name": "BBC Radio 1",
       "url": "https://as-hls-ww-live.akamaized.net/pool_01505109/live/ww/bbc_radio_one/bbc_radio_one.isml/bbc_radio_one-audio%3d96000.norewind.m3u8",
       "logo": "BBC-Radio-1.png"
     },
 
-    "160": {
-      "name": "P4 Lyden av Norge",
-      "url": "https://p4.p4groupaudio.com/P04_MH",
-      "logo": "P4.png"
-    },
-    "161": {
-      "name": "P5 Hits",
-      "url": "https://p5.p4groupaudio.com/P05_MH",
-      "logo": "P5.png"
-    },
-    "168": {
-      "name": "P6 Rock",
-      "url": "https://p6.p4groupaudio.com/P06_MH",
-      "logo": "P6.png"
-    },
-    "170": {
-      "name": "P7 Klem",
-      "url": "https://p7.p4groupaudio.com/P07_MH",
-      "logo": "P7.png"
-    },
-    "172": {
-      "name": "P8 Pop",
-      "url": "https://p8.p4groupaudio.com/P08_MH",
-      "logo": "P8.png"
-    },
-
-    "48": {
+    "128": {
       "name": "Radio Rock",
       "url": "https://live-bauerno.sharp-stream.com/simulcast3_no.mp3",
       "logo": "RadioRock.png"
     },
-    "49": {
+    "129": {
       "name": "IRock 247",
       "url": "https://streamer.radio.co/s493283a7e/listen",
       "logo": "iRock247.png"
     },
-    "56": {
-      "name": "P9 Retro",
-      "url": "https://p9.p4groupaudio.com/P09_MH",
-      "logo": "P9.png"
-    },
-    "58": {
+    "130": {
       "name": "P10 Country",
       "url": "https://p10.p4groupaudio.com/P10_MH",
       "logo": "P10.png"
     },
-    "60": {
+    "131": {
       "name": "Radio Norge",
       "url": "https://live-bauerno.sharp-stream.com/simulcast5_no.mp3",
       "logo": "radio-norge.png"
