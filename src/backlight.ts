@@ -9,9 +9,10 @@
  *   - Pure on/off — no dimming. (Software PWM was tried first and produced
  *     bad visible flicker; hardware PWM on PWM1/GPIO 13 conflicts with the
  *     analog audio jack, so we just live with two states.)
- *   - On power-on, backlight on, 10-second auto-off timer starts.
- *   - channel:change and BT device connect re-arm the timer (back on for
- *     another 10 s).
+ *   - On power-on, backlight on, 20-second auto-off timer starts.
+ *   - Anything that changes the panel image (channel change, BT device
+ *     connect, now-playing album art appearing) re-arms the timer so the
+ *     user gets a fresh 20-second window to see the update.
  *   - While in Bluetooth search mode (BT mode, no device), backlight stays
  *     on indefinitely — no auto-off.
  *   - power:off cuts the backlight immediately and clears the timer.
@@ -19,7 +20,7 @@
 
 import { radioState, RadioState } from "./state";
 
-const OFF_AFTER_MS = 20000; // 10 seconds
+const OFF_AFTER_MS = 20000;
 
 let rpio: any = null;
 let pin: number = -1;
@@ -117,6 +118,16 @@ function onChannelChange(): void {
 }
 
 /**
+ * Album art appearing (or disappearing back to the channel logo) is a
+ * visible panel change, so wake the backlight the same way a channel
+ * change would.
+ */
+function onArtworkChange(): void {
+  if (brightLocked) return;
+  wake();
+}
+
+/**
  * External lock — keeps the backlight on indefinitely until released.
  * Used by the debug page logo-override so the test grid is always visible.
  * Independent of brightLocked (BT search) so neither overrides the other.
@@ -159,6 +170,7 @@ export function startBacklight(rpioModule: any, gpioPin: number): void {
   radioState.on("power:on", onPowerOn);
   radioState.on("power:off", onPowerOff);
   radioState.on("channel:change", onChannelChange);
+  radioState.on("artwork:change", onArtworkChange);
   radioState.on("state:change", onStateChange);
 
   // Sync to current state (covers boot-up where radio is already powered).
@@ -175,6 +187,7 @@ export function stopBacklight(): void {
   radioState.off("power:on", onPowerOn);
   radioState.off("power:off", onPowerOff);
   radioState.off("channel:change", onChannelChange);
+  radioState.off("artwork:change", onArtworkChange);
   radioState.off("state:change", onStateChange);
   clearOffTimer();
   if (rpio && pin >= 0) {

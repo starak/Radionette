@@ -289,9 +289,10 @@ function renderTextLogo(ref: string): RenderedLogo {
   }
   const hue = hash % 360;
 
-  // Radial gradient background: slightly brighter centre, darker edge.
-  const bgCentre = `hsl(${hue}, 55%, 32%)`;
-  const bgEdge = `hsl(${hue}, 70%, 14%)`;
+  // Radial gradient background: brighter centre, still-vibrant edge so
+  // the tile stays perceptible when the backlight has auto-dimmed.
+  const bgCentre = `hsl(${hue}, 75%, 48%)`;
+  const bgEdge = `hsl(${hue}, 80%, 22%)`;
   const grad = ctx.createRadialGradient(
     WIDTH / 2,
     HEIGHT / 2,
