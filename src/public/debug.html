@@ -702,9 +702,13 @@
         bitDiv.appendChild(grp);
       });
 
-      // Hardware-to-label mappings
+      // Hardware-to-label mappings.
+      // Bank is still a physical rotary position; map to human labels 1..4.
+      // Sub-channel is now driven by the AS5600 tuner within the current
+      // band, so all 16 sub values 0..15 are valid. We render them as
+      // their raw sub value (0..15) instead of the old sparse 1..5 map.
       const bankMap = { 12: 1, 8: 2, 10: 3, 3: 4 };
-      const subMap = { 0: 1, 1: 2, 8: 3, 10: 4, 12: 5 };
+      const subLabelForRaw = (subRaw) => subRaw;
 
       // Decoded values
       const mono = (raw >> 10) & 1;
@@ -713,7 +717,7 @@
       const bankRaw = (raw >> 4) & 0xF;
       const subRaw = raw & 0xF;
       const bankLabel = bankMap[bankRaw];
-      const subLabel = subMap[subRaw];
+      const subLabel = subLabelForRaw(subRaw);
 
       $('dec-mono').textContent = mono ? 'STEREO' : 'MONO';
       $('dec-mono').className = 'decoded-value' + (mono ? '' : ' clr-green');
@@ -723,7 +727,7 @@
       $('dec-bt').className = 'decoded-value' + (bt ? ' clr-blue' : '');
       $('dec-bank').textContent = bankLabel ? 'Bank ' + bankLabel : 'unknown (' + bankRaw + ')';
       $('dec-bank').className = 'decoded-value clr-amber';
-      $('dec-sub').textContent = subLabel ? 'Sub ' + subLabel : 'unknown (' + subRaw + ')';
+      $('dec-sub').textContent = 'Sub ' + subLabel;
       $('dec-sub').className = 'decoded-value clr-amber';
       $('dec-raw').textContent = raw;
 
@@ -754,16 +758,16 @@
       });
       stateTable.innerHTML = rows;
 
-      // Channel map — show bank:sub labels, sorted by bank then sub, grouped
+      // Channel map — group by bank (unknown banks go last), sort by full
+      // channel number within each bank so the tuner wedge order is
+      // visible.
       if (s.channels) {
         const mapTable = $('channel-map');
         const sorted = s.channels.slice().sort((a, b) => {
           const aBank = bankMap[(a.number >> 4) & 0xF] || 99;
           const bBank = bankMap[(b.number >> 4) & 0xF] || 99;
           if (aBank !== bBank) return aBank - bBank;
-          const aSub = subMap[a.number & 0xF] || 99;
-          const bSub = subMap[b.number & 0xF] || 99;
-          return aSub - bSub;
+          return a.number - b.number;
         });
         let mrows = '';
         let lastBank = null;
@@ -772,9 +776,10 @@
           const b = (ch.number >> 4) & 0xF;
           const sb = ch.number & 0xF;
           const bLabel = bankMap[b] || '?';
-          const sLabel = subMap[sb] || '?';
+          const sLabel = subLabelForRaw(sb);
           if (bLabel !== lastBank) {
-            mrows += '<tr><td class="bank-header" colspan="2">Bank ' + bLabel + '</td></tr>';
+            const bankTitle = bLabel === '?' ? 'Unmapped' : 'Bank ' + bLabel;
+            mrows += '<tr><td class="bank-header" colspan="2">' + bankTitle + '</td></tr>';
             lastBank = bLabel;
           }
           const style = active ? ' style="color:var(--accent);font-weight:600"' : '';
@@ -882,12 +887,15 @@
       const bankRaw = (raw >> 4) & 0xF;
       const subRaw = raw & 0xF;
 
-      // Find label from hardware value (reverse lookup)
+      // Find label from hardware value (reverse lookup). With the tuner
+      // active the sub-nibble is no longer a distinct rotary position, so
+      // it may not match any of the classic Sub 1..5 buttons — that's
+      // fine, we just leave the sub-button selection unchanged.
       const bankLabel = Object.entries(bankLabelToHw).find(([, hw]) => hw === bankRaw);
       const subLabel = Object.entries(subLabelToHw).find(([, hw]) => hw === subRaw);
 
       dial.bank = bankLabel ? parseInt(bankLabel[0]) : 0;
-      dial.sub = subLabel ? parseInt(subLabel[0]) : 0;
+      dial.sub = subLabel ? parseInt(subLabel[0]) : dial.sub;
 
       updateDialButtons();
     }

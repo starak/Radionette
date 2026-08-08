@@ -316,9 +316,10 @@
         $('playing-info').style.display = 'none';
       }
 
-      // Channel list — sorted and grouped by bank
+      // Channel list — grouped by bank, sorted by tuner wedge order
+      // (full channel number) within each bank.
       const bankMap = { 12: 1, 8: 2, 10: 3, 3: 4 };
-      const subMap = { 0: 1, 1: 2, 8: 3, 10: 4, 12: 5 };
+      const subLabelForRaw = (subRaw) => subRaw;
 
       if (s.channels) {
         const list = $('channel-list');
@@ -327,18 +328,16 @@
           const aBank = bankMap[(a.number >> 4) & 0xF] || 99;
           const bBank = bankMap[(b.number >> 4) & 0xF] || 99;
           if (aBank !== bBank) return aBank - bBank;
-          const aSub = subMap[a.number & 0xF] || 99;
-          const bSub = subMap[b.number & 0xF] || 99;
-          return aSub - bSub;
+          return a.number - b.number;
         });
         let lastBank = null;
         sorted.forEach(ch => {
           const bLabel = bankMap[(ch.number >> 4) & 0xF] || '?';
-          const sLabel = subMap[ch.number & 0xF] || '?';
+          const sLabel = subLabelForRaw(ch.number & 0xF);
           if (bLabel !== lastBank) {
             const hdr = document.createElement('li');
             hdr.className = 'bank-header';
-            hdr.textContent = 'Bank ' + bLabel;
+            hdr.textContent = bLabel === '?' ? 'Unmapped' : 'Bank ' + bLabel;
             list.appendChild(hdr);
             lastBank = bLabel;
           }
