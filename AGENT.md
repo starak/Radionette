@@ -44,7 +44,7 @@ Power ON + Bluetooth OFF
 
 | File | Purpose |
 |---|---|
-| `src/index.ts` | Entry point — wires modules: channels -> player -> bluetooth -> hotspot-alert -> web -> adc -> tuner -> gpio -> volume -> display |
+| `src/index.ts` | Entry point — wires modules in order: channels -> player -> bluetooth -> hotspot-alert -> audio -> web -> wifi -> adc -> tuner -> gpio -> backlight -> volume -> artwork -> display-service. Also redirects `console.warn` to stdout so pm2 keeps status lines in a single log file. |
 | `src/state.ts` | Central state singleton + EventEmitter. All modules communicate through this. |
 | `src/gpio.ts` | Reads 11 input pins every 10ms, debounces (50ms), drives state machine, controls LED outputs. Translates the top nibble of the physical channel-selector switch to a band ordinal via `bandForHardware()` and pushes it to `tuner.ts`. When the tuner is active, gpio.ts stays out of channel selection; when the tuner is inactive, gpio.ts calls `setChannel(channelsForBand(band)[0] ?? null)` — first-by-order fallback, or silence for empty/unmapped bands. Exports `injectGpioValue()` for virtual dial API and `resetGpioOverride()` to revert to physical pins. |
 | `src/channels.ts` | Loads `channels.json` at startup. Validates and indexes bands (by ordinal and by hardware nibble) and channels (by id and by band). Helpers: `channelsForBand(ordinal)` (pre-sorted by `order`), `bandForHardware(nibble)`, `channelById(id)`, `getAllBands()`, `getAllChannels()`. |
@@ -63,38 +63,49 @@ Power ON + Bluetooth OFF
 | `src/gpio-logger.ts` | Standalone utility — logs raw GPIO values on change for mapping physical dial positions. |
 | `src/display.ts` | Low-level GC9A01 SPI driver. `initDisplay`, `drawRgb565Buffer`, `fillScreen`, `testPattern`, `stopDisplay`. Uses `spi-device` + `rpio`. Closes GPIO with `PIN_PRESERVE` on shutdown so the last frame stays visible. |
 | `src/render/frame.ts` | Pixel-format helpers — RGBA8888 -> RGB565 big-endian, solid-colour frame builder. |
-| `src/render/logos.ts` | Logo loader + cache. Renders PNG/GIF from disk (`canvas` + `gifuct-js`), fetches http(s):// URLs (used by the now-playing artwork feed), OR synthesises a text tile from a `text:<id>|<display name>` reference — coloured circular background (deterministic hue per id) with the display name wrapped and auto-sized to fit. Outputs 240x240 round-masked RGB565 frames with per-frame delays. Cached in a shared Map keyed by absolute path, URL, or the full text ref. |
+| `src/render/logos.ts` | Logo loader + cache. Renders PNG/GIF from disk (`canvas` + `gifuct-js`), fetches http(s):// URLs (used by the now-playing artwork feed), OR synthesises a text tile from a `text:<id>|<display name>` reference — an inner coloured badge (radius 96 out of 240) with a radial-gradient background (deterministic hue per id) and the display name centred, word-wrapped into 1..3 lines and sized to fit inside the badge. Text tiles are built as SVG strings and rasterised via `loadImage(Buffer.from(svg))` because on Pi OS Trixie the shipped Cairo is incompatible with node-canvas 2.11.2's `fillRect`/`fillText`. Outputs 240x240 round-masked RGB565 frames with per-frame delays. Cached in a shared Map keyed by absolute path, URL, or the full text ref. |
 | `src/render/displayController.ts` | Orchestrator — owns display lifecycle, single-slot paint queue (newer requests supersede in-flight loads), animation timer for GIFs, graceful shutdown that waits for in-flight paint so PIN_PRESERVE leaves a coherent frame. |
 | `src/display-service.ts` | Glue between `radioState` events and `displayController`. State -> logo mapping: power off = black; bluetooth + no device = `bluetooth.png`; bluetooth + connected = `bluetooth-connected.png`; radio + `nowPlayingArtwork.url` (if any) = live album art; else radio + channel with a resolvable `channel.logo` file = that file; else radio + channel = synthesised text tile `text:<id>|<name>`. Never falls through to a generic default.png for an unbranded channel. |
 | `src/artwork.ts` | Listens to `player:metadata`, parses "Artist - Song" (or NRK-style "Programme: Title, Artist"), queries the iTunes Search API for the matching song, and pushes the highest-resolution (600x600) artwork URL through `radioState.setArtwork()`. Debounces metadata bursts (400 ms), caches lookups by lowercased artist+title, evicts oldest entries when the cache reaches 200. Clears artwork on channel change and player stop. |
+| `src/backlight.ts` | Owns GPIO 13 (the LEDA MOSFET gate). On/off only (no PWM). Wakes on channel changes, artwork changes and BT device connect and re-arms a 20 s auto-off timer. Locks bright while in BT search (no auto-off). Exposes `setBacklightOverrideLock()` used by the debug logo-override to keep the panel visible while inspecting. |
 | `src/scripts/display-smoke.ts` | Hardware smoke test — red/green/blue/RGBW bars cycle. Run with `npm run smoke-display` on the Pi. |
 | `src/scripts/display-render-test.ts` | Render pipeline test — cycles through every channel logo + BT logos + default fallback. Run with `npm run render-test` on the Pi. |
+| `src/scripts/as5600-monitor.ts` | Live AS5600 diagnostic — prints RAW_ANGLE, angle in degrees, magnet STATUS (MD/ML/MH), AGC and MAGNITUDE every 100 ms with a session min/max summary on Ctrl-C. Run with `npm run as5600-monitor` on the Pi (stop radionette first so the ADC isn't contended). |
 | `channels.json` | Channel configuration — `bands` array declares logical bands and their physical top-nibble mapping; `channels` array lists stations by stable `id`, referencing a band and a sparse `order` for tuner wedge layout. Edit this to change stations. |
 | `wifi-fallback.sh` | Boot script — waits 30s for WiFi, starts hotspot if no connection. Installed as a systemd service by `setup-pi.sh`. |
 | `assets/bt-connect.wav` | Ascending two-tone chime played when a Bluetooth device connects. |
 | `assets/bt-ready.wav` | Soft single tone played when BT mode activates or a device disconnects. |
 | `assets/hotspot-bleep.wav` | 880Hz tone followed by 3s silence. Loops via aplay when hotspot is active in radio mode. |
-| `assets/channel-logos/` | PNG/GIF logos shown on the round display. Filenames referenced from `channels.json` `logo` field. Special files: `default.png` (fallback), `bluetooth.png` (BT mode, no device), `bluetooth-connected.png` (BT mode, device connected). |
+| `assets/channel-logos/` | PNG/GIF logos shown on the round display. Filenames referenced from `channels.json` `logo` field. Special files: `default.png` (power-on splash), `bluetooth.png` (BT mode, no device), `bluetooth-connected.png` (BT mode, device connected). Channels without a matching logo file are rendered as synthesised text tiles at runtime — see `src/render/logos.ts`. |
 
 ### Event Flow
 
 ```
 GPIO poll (10ms) -> debounce (50ms) -> state.ts EventEmitter
-  |- player.ts listens          -> spawns/kills mpg123 (with auto-retry on failure)
+  |- player.ts listens          -> spawns/kills mpg123 or ffmpeg (with auto-retry on failure)
   |- bluetooth.ts listens       -> enables/disables BT adapter
   |- audio.ts listens           -> loads/unloads per-sink PulseAudio mono remap-sinks, watches for new sinks/inputs
+  |- volume.ts listens          -> re-applies PA volume on mode changes so new BT sinks pick it up
+  |- artwork.ts listens         -> iTunes lookup on metadata; clears on channel change / stop
   |- hotspot-alert.ts listens   -> bleeps when hotspot active in radio mode
-  |- display-service.ts listens -> picks logo for current state, hands to displayController
+  |- display-service.ts listens -> picks logo/artwork/text tile for current state, hands to displayController
+  |- backlight.ts listens       -> wakes GPIO 13 on channel / artwork / BT events, 20s auto-off
   +- web.ts listens             -> broadcasts to WebSocket clients
+
+AS5600 (I2C, 50ms poll, tuner.ts) -> setTunerBand feed + setChannel -> state.ts
+ADS1115 (I2C, 100ms poll, volume.ts) -> pactl set-sink-volume + setVolume -> state.ts
 ```
 
 Events emitted by state.ts:
 - `power:on` / `power:off`
 - `mode:bluetooth` / `mode:radio`
-- `channel:change` (with channel info)
+- `channel:change` (ChannelInfo | null — null = silence)
 - `player:playing` / `player:stopped`
-- `player:metadata` (ICY stream info)
+- `player:metadata` (raw ICY / stream-title string)
 - `mono:on` / `mono:off`
+- `volume:change` (0..100)
+- `tuner:change` (fraction, band ordinal)
+- `artwork:change` (NowPlayingArtwork | null)
 - `state:change` (full state snapshot, used by web)
 
 ### Channel Config
@@ -122,6 +133,7 @@ Behaviour:
 
 - **Serialized play/stop:** All operations go through a promise chain (`pendingOperation`) to prevent overlapping spawns
 - **Metadata parsing:** Extracts `StreamTitle` from mpg123 stdout/stderr (ICY tags) and from ffmpeg's stream metadata (`StreamTitle: ...` or `title: ...` lines) — all funneled through the same `radioState.setMetadata()` path
+- **Null channel = silence:** the `channel:change` handler accepts `ChannelInfo | null`; on `null` it calls `scheduleStop()`. Used when the tuner is on a band with no channels or the hardware nibble is unmapped.
 - **Auto-retry on failure:** When the player exits unexpectedly and `desiredChannel` is still set, retries with escalating backoff:
   - Delays: 5s → 10s → 30s (caps at 30s for subsequent retries)
   - Retries are cancelled on explicit stop, power off, mode switch, or channel change
@@ -258,17 +270,19 @@ The hotspot alert module (`src/hotspot-alert.ts`) provides an audible notificati
 The display stack drives a Waveshare-style GC9A01 1.28" 240x240 round IPS panel via SPI0:
 
 - **Driver (`src/display.ts`):** Low-level SPI + GPIO. Uses `spi-device` for SPI (mode 0, 32 MHz, 4096-byte chunks) and `rpio` for D/C and RESET. Init sequence is the proven Waveshare variant (MADCTL=0x48, COLMOD=0x05, inversion ON, 50/50/150 ms reset pulse). `stopDisplay()` closes the GPIO pins with `rpio.PIN_PRESERVE` so the last frame stays visible after Node exits — this is critical, otherwise the panel blanks the moment the process dies.
-- **Backlight (`src/backlight.ts`):** GPIO 13 drives a MOSFET that switches the panel's LEDA rail. `gpio.ts` opens the pin OUTPUT/LOW at init then hands the pin handle to `backlight.ts` (via `getBacklightHandle()`). Pure on/off — no PWM. (Software PWM via `setInterval` produced bad visible flicker; hardware PWM on PWM1/GPIO 13 would clash with the right channel of the 3.5mm analog audio jack.) Auto-off policy: backlight on for 10 s after `power:on`, then OFF. The 10 s timer restarts on `channel:change` and on Bluetooth device connect (null → name transition watched via `state:change`). Entering BT search mode (mode = bluetooth, no device) locks the backlight ON with no auto-off until either a device connects or we leave BT mode. `power:off` cuts the backlight and clears all timers. Pin is closed by `gpio.ts.stopGpio()` after `stopBacklight()` clears the timer.
+- **Backlight (`src/backlight.ts`):** GPIO 13 drives a MOSFET that switches the panel's LEDA rail. `gpio.ts` opens the pin OUTPUT/LOW at init then hands the pin handle to `backlight.ts` (via `getBacklightHandle()`). Pure on/off — no PWM. (Software PWM via `setInterval` produced bad visible flicker; hardware PWM on PWM1/GPIO 13 would clash with the right channel of the 3.5mm analog audio jack.) Auto-off policy: backlight ON for 20 s (`OFF_AFTER_MS`) after `power:on`, then OFF. The timer restarts on any visible content change: `channel:change`, `artwork:change` (album art appears / clears) and Bluetooth device connect. Entering BT search mode (mode = bluetooth, no device) locks the backlight ON with no auto-off until either a device connects or we leave BT mode. `power:off` cuts the backlight and clears all timers. `setBacklightOverrideLock()` (used by the debug logo-override endpoint) forces the backlight ON indefinitely until the caller releases the lock. Pin is closed by `gpio.ts.stopGpio()` after `stopBacklight()` clears the timer.
 - **Render pipeline (`src/render/`):**
-  - `frame.ts` — pure pixel-format helpers. Converts an RGBA8888 240x240 buffer to RGB565 big-endian (115200 bytes) suitable for `drawRgb565Buffer()`. Also `solidFrame(r,g,b)` for fallback paint.
-  - `logos.ts` — loads PNG/GIF logos via `node-canvas` and `gifuct-js`. Each frame is composited onto a 240x240 canvas with a circular clip path (anything outside the circle stays black so the round panel corners look intentional), "contain"-fit and centred. Animated GIFs are decoded honouring disposal types (clear-to-bg, restore-previous) and per-frame delays. Result is cached in memory keyed by absolute path.
+  - `frame.ts` — pure pixel-format helpers. Converts an RGBA8888 240x240 buffer to RGB565 big-endian (115200 bytes) suitable for `drawRgb565Buffer()`. Also `solidFrame(r,g,b)` for fallback paint. Applies the display tint LUT (per-channel R/G/B multipliers) baked at conversion time.
+  - `logos.ts` — resolves a logo reference into a cached RGB565 frame. Three sources: local PNG/GIF files via `node-canvas` and `gifuct-js`; http(s):// URLs (used by the now-playing album-art feed) fetched with an 8 s timeout and rasterised via `loadImage(Buffer)`; and `text:<id>|<name>` synthetic references rendered from an SVG (badge + gradient + wrapped text) and rasterised through the same SVG-loadImage path. Each frame is composited onto a 240x240 canvas with a circular clip path (anything outside the circle stays black), "contain"-fit and centred. Animated GIFs are decoded honouring disposal types and per-frame delays. Results are cached in a shared Map keyed by absolute path, URL or full text ref.
   - `displayController.ts` — orchestrator. Owns the driver lifecycle, a single-slot pending-paint queue (so rapid channel changes always converge on the latest), and the animation timer for GIFs. `showLogo()` is fire-and-forget; `shutdown()` waits up to 500 ms for any in-flight paint to finish so PIN_PRESERVE leaves a coherent frame.
 - **Service (`src/display-service.ts`):** Subscribes to `state:change`. State -> logo mapping:
   - `power: false` -> solid black
   - `mode === "bluetooth"` + `bluetoothDevice === null` -> `bluetooth.png`
   - `mode === "bluetooth"` + connected -> `bluetooth-connected.png`
-  - `mode === "radio"` + channel -> `channel.logo` (or `default.png` fallback)
-  - Anything else (radio with no channel selected) -> `default.png`
+  - `mode === "radio"` + `nowPlayingArtwork.url` (from `artwork.ts`) -> live album art URL
+  - `mode === "radio"` + channel with resolvable `channel.logo` file -> that file
+  - `mode === "radio"` + channel with no logo file -> synthesised text tile (`text:<id>|<name>`)
+  - Anything else -> `default.png`
   - Tracks `lastApplied` so it doesn't re-paint identical state.
 - **Power-on splash:** On every `power:on` event, paints `default.png` for 2 s before applying the real state. While the splash is active a `splashActive` flag suppresses repaints from the post-power-on event burst (`mode:radio`, `setChannel`, etc. all fire synchronously after `setPower(true)` — without the suppression they would race the splash off the screen). The one exception is a power-off during the splash window: it cancels immediately and goes black. After the timer fires, `lastApplied` is reset to force a fresh repaint of whatever state is current.
 - **Cache pre-warm:** During init, `default.png`, `bluetooth.png`, and `bluetooth-connected.png` are decoded eagerly. Otherwise the first power-on after boot would sit on a black panel for ~1 s while node-canvas chews through the PNG.

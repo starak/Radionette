@@ -4,11 +4,12 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 
 ## What It Does
 
-- **Radio mode:** A rotary dial switch selects from 15+ internet radio stations via GPIO. Audio plays through the Pi's 3.5mm jack or HDMI.
+- **Radio mode:** A rotary switch selects a band (e.g. Norsk, BBC) and a magnetic angle sensor on the tuning needle picks a station within the band. 30+ internet radio streams (HTTP MP3/icecast and HLS). Audio plays through the Pi's 3.5mm jack or HDMI.
 - **Bluetooth mode:** The Pi becomes a discoverable Bluetooth speaker called "Radionette" (with a speaker icon on your phone). Pair and stream music from any device.
+- **Round-panel display:** A GC9A01 1.28" round IPS display shows the current channel logo, or dynamically-fetched album art matching the current song from iTunes Search. Channels without a proper logo file get a synthesised text-tile logo.
 - **Web status page:** A live dashboard at `http://radionette.local:8080/` shows current station, now-playing metadata, and Bluetooth status. Tab navigation links to WiFi settings and a debug page.
 - **WiFi configuration:** If the Pi can't connect to a known WiFi network at boot, it creates an open hotspot (`Radionette-Setup`, no password). Connect to the hotspot and visit `http://10.42.0.1:8080/wifi` to configure a network. WiFi settings are also always accessible at `http://radionette.local:8080/wifi` when connected to the same network.
-- **Debug page:** A live view of GPIO bit state, decoded bank/sub-channel values, full state dump, and grouped channel map at `http://radionette.local:8080/debug`. Includes a virtual dial for switching channels from the browser (with a reset-to-physical button), plus WiFi reset and system reboot controls.
+- **Debug page:** A live view of GPIO bit state, current band, tuner needle position with per-band wedge markers, full state dump, and grouped channel map at `http://radionette.local:8080/debug`. Includes a virtual dial for switching bands from the browser, tuner calibration buttons, WiFi reset and system reboot controls.
 - **Hotspot bleep alert:** When the Pi is in radio mode and the hotspot is active (no WiFi configured), a periodic bleep sounds through the speaker to alert the user to set up WiFi.
 - **Auto-retry playback:** If the radio stream fails (e.g. no internet during hotspot mode), the player retries with escalating backoff (5s, 10s, 30s). Playback also resumes automatically when WiFi is configured via the settings page.
 
@@ -128,9 +129,10 @@ Channel and mode logos are PNG or animated GIF files in `assets/channel-logos/`.
 
 - Reference channel logos from `channels.json` via the `logo` field, e.g. `"logo": "NRK-P1.png"`.
 - Special filenames consumed by the display service:
-  - `default.png` — fallback when a channel has no `logo` or the file is missing.
+  - `default.png` — shown during the power-on splash.
   - `bluetooth.png` — shown in BT mode while no device is connected.
   - `bluetooth-connected.png` — shown in BT mode while a device is connected.
+- Channels with no `logo` field, or a `logo` pointing at a missing file, get a **synthesised text-tile logo** at runtime — a coloured circular badge with the station name centred on it, hue deterministic per channel id. See "Configuring Stations" below.
 - Animated GIFs play indefinitely; per-frame delays from the GIF are honoured (clamped to >=20 ms).
 - Logos are cached in memory after first decode; restart radionette to pick up file changes.
 - On every power-on, `default.png` is shown for 2 s before the channel/BT logo appears (a brief "splash" so the panel doesn't snap straight to content).
@@ -280,29 +282,45 @@ There is **no cap** on channels per band — 4 channels or 40, the needle fills 
 ```
 radionette/
   src/
-    index.ts          # Entry point
-    state.ts          # Central state machine + event emitter
-    gpio.ts           # GPIO polling, debounce, LED control
-    channels.ts       # Channel lookup from channels.json
-    player.ts         # mpg123 (MP3) / ffmpeg (HLS) child process management
-    bluetooth.ts      # Bluetooth A2DP sink management
-    audio.ts          # Mono/stereo mixing (PulseAudio remap-sink)
-    wifi.ts           # WiFi scanning, connecting, hotspot (nmcli)
-    hotspot-alert.ts  # Periodic bleep when hotspot is active in radio mode
-    web.ts            # HTTP + WebSocket server
+    index.ts             # Entry point — wires all modules
+    state.ts             # Central state machine + event emitter
+    gpio.ts              # GPIO polling, debounce, LED control
+    channels.ts          # channels.json loader; bands + channels indexes
+    player.ts            # mpg123 (MP3) / ffmpeg (HLS) child process management
+    bluetooth.ts         # Bluetooth A2DP sink management
+    audio.ts             # Mono/stereo mixing (PulseAudio remap-sink)
+    adc.ts               # Shared ADS1115 access on /dev/i2c-1
+    volume.ts            # Volume pot reader (ADS1115 AIN0)
+    tuner.ts             # AS5600 magnetic angle tuner over I2C
+    artwork.ts           # Now-playing metadata -> iTunes album-art lookup
+    backlight.ts         # Display backlight controller (GPIO 13)
+    display.ts           # Low-level GC9A01 SPI driver
+    display-service.ts   # State -> logo mapping (channel/artwork/text-tile)
+    render/
+      displayController.ts # Paint queue, animation timer
+      logos.ts             # Logo loader: files, http URLs, text: tiles
+      frame.ts             # RGBA8888 -> RGB565 + display tint
+    wifi.ts              # WiFi scanning, connecting, hotspot (nmcli)
+    hotspot-alert.ts     # Periodic bleep when hotspot is active in radio mode
+    web.ts               # HTTP + WebSocket server
     public/
-      index.html      # Status page (single-file, inline CSS/JS)
-      wifi.html       # WiFi settings page (single-file, inline CSS/JS)
-      debug.html      # Debug page (GPIO bits, state dump, channel map)
-    gpio-logger.ts    # Utility for mapping dial positions
+      index.html         # Status page (single-file, inline CSS/JS)
+      wifi.html          # WiFi settings page (single-file, inline CSS/JS)
+      debug.html         # Debug page (GPIO bits, state, tuner, channel map)
+    gpio-logger.ts       # Utility for mapping dial positions
+    scripts/
+      display-smoke.ts       # Colour-bar hardware test for the GC9A01
+      display-render-test.ts # Cycle every channel logo through the pipeline
+      as5600-monitor.ts      # Live AS5600 angle/health monitor
   assets/
-    bt-connect.wav    # Sound: device connected
-    bt-ready.wav      # Sound: BT mode active / device disconnected
-    hotspot-bleep.wav # Sound: 880Hz tone + silence, loops while hotspot active
-  channels.json       # Station configuration
-  deploy.sh           # Build + deploy script
-  setup-pi.sh         # One-time Pi setup script
-  wifi-fallback.sh    # Boot script: start hotspot if no WiFi
+    channel-logos/       # Per-station logo PNG/GIF files (+ default/bluetooth)
+    bt-connect.wav       # Sound: device connected
+    bt-ready.wav         # Sound: BT mode active / device disconnected
+    hotspot-bleep.wav    # Sound: 880Hz tone + silence, loops while hotspot active
+  channels.json          # Band + station configuration
+  deploy.sh              # Build + deploy script
+  setup-pi.sh            # One-time Pi setup script
+  wifi-fallback.sh       # Boot script: start hotspot if no WiFi
   package.json
   tsconfig.json
 ```

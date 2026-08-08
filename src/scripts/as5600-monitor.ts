@@ -2,11 +2,12 @@
  * Live AS5600 angle monitor.
  *
  * Prints RAW_ANGLE + STATUS every 100 ms so you can see the sensor react
- * to shaft motion in real time. Use this to find the actual mechanical
- * endpoints of the needle sweep before running the OTP burn, and to
- * spot-check magnet health.
+ * to shaft motion in real time. Useful for spot-checking magnet health
+ * (STATUS.MD / AGC / MAGNITUDE) and for finding the mechanical
+ * endpoints of the needle sweep when calibrating the tuner.
  *
- * Requires I2C temporarily wired from AS5600 SDA/SCL to Pi GPIO 2/3.
+ * The tuner reads angle over I2C in production, so this script runs on
+ * the same SDA/SCL wiring the app uses — no extra hookup needed.
  *
  * Usage on the Pi:
  *

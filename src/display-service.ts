@@ -3,7 +3,9 @@
  *
  * Behaviour:
  *   - power off              -> solid black (panel is otherwise inert)
- *   - radio mode + channel   -> channel.logo (or default.png fallback)
+ *   - radio + album art hit  -> nowPlayingArtwork.url (iTunes)
+ *   - radio + logo file      -> channel.logo (PNG/GIF from assets/channel-logos)
+ *   - radio + no logo file   -> synthesised text tile (coloured badge with name)
  *   - bluetooth, no device   -> bluetooth.png
  *   - bluetooth, connected   -> bluetooth-connected.png
  *
