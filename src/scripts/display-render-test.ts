@@ -57,7 +57,7 @@ async function main(): Promise<void> {
   const channels = getAllChannels();
   console.log(`[render-test] cycling ${channels.length} channel logos (${HOLD_MS}ms each)`);
   for (const ch of channels) {
-    console.log(`  ${ch.number.toString().padStart(3)}  ${ch.name}  -> ${ch.logo ?? "(no logo)"}`);
+    console.log(`  ${ch.id.padEnd(20)} band=${ch.band} order=${ch.order}  ${ch.name}  -> ${ch.logo ?? "(no logo)"}`);
     displayController.showLogo(ch.logo);
     await sleep(HOLD_MS);
   }

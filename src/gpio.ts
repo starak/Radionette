@@ -1,5 +1,6 @@
 import { radioState } from "./state";
-import { lookupChannel } from "./channels";
+import { bandForHardware, channelsForBand } from "./channels";
+import { setTunerBand, isTunerActive } from "./tuner";
 
 // rpio is a native module that only works on the Pi.
 // We require() it so the app can still be built on other machines
@@ -84,9 +85,24 @@ function processValue(rawValue: number): void {
   // Radio mode — power on, bluetooth off
   updateOutputs(true, false);
 
-  // Look up channel
-  const channel = lookupChannel(channelBits);
-  radioState.setChannel(channel);
+  // Top nibble of the channel selector = band selector on the physical
+  // rotary. Translate to a band ordinal via channels.json. Unmapped
+  // nibbles pass through as band=0 (silence).
+  const bandNibble = (channelBits >> 4) & 0x0f;
+  const bandOrdinal = bandForHardware(bandNibble) ?? 0;
+  setTunerBand(bandOrdinal);
+
+  if (isTunerActive()) {
+    // Tuner drives the actual channel selection based on needle angle
+    // combined with the band ordinal. gpio.ts stays out of setChannel().
+    return;
+  }
+
+  // Fallback (no AS5600 / not calibrated / dev mode): pick the first
+  // channel in the current band by `order`, or silence if the band is
+  // unmapped or empty.
+  const channels = channelsForBand(bandOrdinal);
+  radioState.setChannel(channels[0] ?? null);
 }
 
 function updateOutputs(power: boolean, bluetooth: boolean): void {
@@ -132,8 +148,18 @@ function poll(): void {
         } else if (bluetoothBit === 1) {
           label = "Bluetooth";
         } else {
-          const ch = lookupChannel(rawValue & 0xff);
-          label = ch ? `Channel: ${ch.number} – ${ch.name}` : "Channel: none";
+          const nibble = (rawValue >> 4) & 0x0f;
+          const bandOrdinal = bandForHardware(nibble);
+          if (bandOrdinal === null) {
+            label = `Band: unmapped nibble 0x${nibble.toString(16)}`;
+          } else if (isTunerActive()) {
+            label = `Band: ${bandOrdinal} (tuner)`;
+          } else {
+            const first = channelsForBand(bandOrdinal)[0];
+            label = first
+              ? `Band: ${bandOrdinal} → ${first.name} (fallback: first channel)`
+              : `Band: ${bandOrdinal} (empty)`;
+          }
         }
         console.log(`[GPIO] Binary: ${binary}  Decimal: ${rawValue}  ${label}`);
         processValue(rawValue);
@@ -198,9 +224,15 @@ export function injectGpioValue(rawValue: number): void {
   }
 
   const binary = rawValue.toString(2).padStart(11, "0");
-  const ch = lookupChannel(rawValue & 0xff);
-  const chLabel = ch ? `${ch.number} – ${ch.name}` : "none";
-  console.log(`[GPIO] Injected: Binary: ${binary}  Decimal: ${rawValue}  Channel: ${chLabel}`);
+  const nibble = (rawValue >> 4) & 0x0f;
+  const bandOrdinal = bandForHardware(nibble);
+  const bandLabel =
+    bandOrdinal !== null
+      ? `band ${bandOrdinal}`
+      : `unmapped nibble 0x${nibble.toString(16)}`;
+  console.log(
+    `[GPIO] Injected: Binary: ${binary}  Decimal: ${rawValue}  ${bandLabel}`
+  );
   processValue(rawValue);
 }
 
@@ -219,9 +251,15 @@ export function resetGpioOverride(): void {
   }
 
   const binary = rawValue.toString(2).padStart(11, "0");
-  const ch = lookupChannel(rawValue & 0xff);
-  const chLabel = ch ? `${ch.number} – ${ch.name}` : "none";
-  console.log(`[GPIO] Reset to physical: Binary: ${binary}  Decimal: ${rawValue}  Channel: ${chLabel}`);
+  const nibble = (rawValue >> 4) & 0x0f;
+  const bandOrdinal = bandForHardware(nibble);
+  const bandLabel =
+    bandOrdinal !== null
+      ? `band ${bandOrdinal}`
+      : `unmapped nibble 0x${nibble.toString(16)}`;
+  console.log(
+    `[GPIO] Reset to physical: Binary: ${binary}  Decimal: ${rawValue}  ${bandLabel}`
+  );
   processValue(rawValue);
 }
 

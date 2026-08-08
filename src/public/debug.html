@@ -485,22 +485,9 @@
       </div>
     </div>
     <div class="dial-group">
-      <span class="dial-label">Bank</span>
+      <span class="dial-label">Band</span>
       <div class="dial-buttons" id="dial-bank">
-        <button class="dial-btn" data-val="1" onclick="dialSet('bank',1)">1</button>
-        <button class="dial-btn" data-val="2" onclick="dialSet('bank',2)">2</button>
-        <button class="dial-btn" data-val="3" onclick="dialSet('bank',3)">3</button>
-        <button class="dial-btn" data-val="4" onclick="dialSet('bank',4)">4</button>
-      </div>
-    </div>
-    <div class="dial-group">
-      <span class="dial-label">Sub</span>
-      <div class="dial-buttons" id="dial-sub">
-        <button class="dial-btn" data-val="1" onclick="dialSet('sub',1)">1</button>
-        <button class="dial-btn" data-val="2" onclick="dialSet('sub',2)">2</button>
-        <button class="dial-btn" data-val="3" onclick="dialSet('sub',3)">3</button>
-        <button class="dial-btn" data-val="4" onclick="dialSet('sub',4)">4</button>
-        <button class="dial-btn" data-val="5" onclick="dialSet('sub',5)">5</button>
+        <!-- Populated dynamically from s.bands. -->
       </div>
     </div>
     <div class="dial-group">
@@ -542,6 +529,46 @@
     </div>
     <div class="dial-note">
       Per-channel multipliers applied at frame conversion. Cache rebuilds on change.
+    </div>
+  </div>
+
+  <!-- Tuner (AS5600) -->
+  <div class="card">
+    <h2>Tuner</h2>
+    <div class="dial-group">
+      <span class="dial-label">Status</span>
+      <span id="tuner-status">—</span>
+    </div>
+    <div class="dial-group">
+      <span class="dial-label">Raw</span>
+      <span id="tuner-raw" style="font-family:monospace">—</span>
+      <span class="dial-label" style="margin-left:1rem">Min</span>
+      <span id="tuner-min" style="font-family:monospace">—</span>
+      <span class="dial-label" style="margin-left:1rem">Max</span>
+      <span id="tuner-max" style="font-family:monospace">—</span>
+    </div>
+    <div class="dial-group">
+      <span class="dial-label">Band</span>
+      <span id="tuner-band" style="font-family:monospace">—</span>
+      <span class="dial-label" style="margin-left:1rem">Fraction</span>
+      <span id="tuner-fraction" style="font-family:monospace">—</span>
+    </div>
+    <!-- Needle -->
+    <div id="tuner-needle-track" style="position:relative;height:36px;margin:0.6rem 0;background:#111;border-radius:6px;overflow:hidden;">
+      <div id="tuner-wedges" style="position:absolute;inset:0"></div>
+      <div id="tuner-needle" style="position:absolute;top:2px;bottom:2px;width:2px;background:#f80;left:0"></div>
+    </div>
+    <div class="dial-group">
+      <span class="dial-label">Channels in band</span>
+      <span id="tuner-channels">—</span>
+    </div>
+    <div class="dial-group" style="justify-content:flex-end;gap:0.4rem">
+      <button class="dial-btn" onclick="tunerCalibrate('min')">Set Min (at CCW stop)</button>
+      <button class="dial-btn" onclick="tunerCalibrate('max')">Set Max (at CW stop)</button>
+      <button class="dial-btn" onclick="tunerToggleInvert()"><span id="tuner-invert-label">Invert: off</span></button>
+    </div>
+    <div class="dial-note">
+      Point the needle at the mechanical CCW end, click <b>Set Min</b>. Point at the CW end, click <b>Set Max</b>. If the sweep runs backwards, toggle <b>Invert</b>. Persisted to <code>~/.radionette/tuner-calibration.json</code>.
     </div>
   </div>
 
@@ -662,9 +689,11 @@
         bitDiv.appendChild(grp);
       });
 
-      // Hardware-to-label mappings
-      const bankMap = { 12: 1, 8: 2, 10: 3, 3: 4 };
-      const subMap = { 0: 1, 1: 2, 8: 3, 10: 4, 12: 5 };
+      // Server-provided bands table drives all "which band is this?"
+      // decisions. Empty until the first state message arrives.
+      const bandsList = Array.isArray(s.bands) ? s.bands : [];
+      const bandByHw = new Map(bandsList.map(b => [b.hardware, b]));
+      const bandByOrdinal = new Map(bandsList.map(b => [b.ordinal, b]));
 
       // Decoded values
       const mono = (raw >> 10) & 1;
@@ -672,8 +701,7 @@
       const bt = (raw >> 8) & 1;
       const bankRaw = (raw >> 4) & 0xF;
       const subRaw = raw & 0xF;
-      const bankLabel = bankMap[bankRaw];
-      const subLabel = subMap[subRaw];
+      const bandForBits = bandByHw.get(bankRaw);
 
       $('dec-mono').textContent = mono ? 'STEREO' : 'MONO';
       $('dec-mono').className = 'decoded-value' + (mono ? '' : ' clr-green');
@@ -681,15 +709,17 @@
       $('dec-power').className = 'decoded-value' + (power ? ' clr-green' : '');
       $('dec-bt').textContent = bt ? 'ON' : 'OFF';
       $('dec-bt').className = 'decoded-value' + (bt ? ' clr-blue' : '');
-      $('dec-bank').textContent = bankLabel ? 'Bank ' + bankLabel : 'unknown (' + bankRaw + ')';
+      $('dec-bank').textContent = bandForBits
+        ? bandForBits.name + ' (#' + bandForBits.ordinal + ')'
+        : 'unmapped nibble 0x' + bankRaw.toString(16);
       $('dec-bank').className = 'decoded-value clr-amber';
-      $('dec-sub').textContent = subLabel ? 'Sub ' + subLabel : 'unknown (' + subRaw + ')';
+      $('dec-sub').textContent = 'Sub 0x' + subRaw.toString(16);
       $('dec-sub').className = 'decoded-value clr-amber';
       $('dec-raw').textContent = raw;
 
       // Channel info
       if (s.channel) {
-        $('ch-number').textContent = s.channel.number;
+        $('ch-number').textContent = s.channel.id;
         $('ch-name').textContent = s.channel.name;
         $('ch-url').textContent = s.channel.url || '—';
       } else {
@@ -705,40 +735,41 @@
 
       // Full state table
       const stateTable = $('state-table');
-      const stateKeys = ['power', 'mode', 'playing', 'bluetooth', 'bluetoothDevice', 'mono', 'volume', 'metadata', 'rawGpio'];
+      const stateKeys = ['power', 'mode', 'playing', 'bluetooth', 'bluetoothDevice', 'mono', 'volume', 'metadata', 'nowPlayingArtwork', 'rawGpio'];
       let rows = '';
       stateKeys.forEach(k => {
         const v = s[k];
-        const display = v === undefined ? '—' : v === null ? 'null' : String(v);
+        let display;
+        if (v === undefined) display = '—';
+        else if (v === null) display = 'null';
+        else if (typeof v === 'object') display = JSON.stringify(v);
+        else display = String(v);
         rows += '<tr><td class="key">' + k + '</td><td class="val">' + escHtml(display) + '</td></tr>';
       });
       stateTable.innerHTML = rows;
 
-      // Channel map — show bank:sub labels, sorted by bank then sub, grouped
+      // Channel map — group by band ordinal (following bandsList order),
+      // sort by `order` within band.
       if (s.channels) {
         const mapTable = $('channel-map');
         const sorted = s.channels.slice().sort((a, b) => {
-          const aBank = bankMap[(a.number >> 4) & 0xF] || 99;
-          const bBank = bankMap[(b.number >> 4) & 0xF] || 99;
-          if (aBank !== bBank) return aBank - bBank;
-          const aSub = subMap[a.number & 0xF] || 99;
-          const bSub = subMap[b.number & 0xF] || 99;
-          return aSub - bSub;
+          if (a.band !== b.band) return a.band - b.band;
+          return a.order - b.order;
         });
         let mrows = '';
-        let lastBank = null;
+        let lastBand = null;
         sorted.forEach(ch => {
-          const active = s.channel && s.channel.number === ch.number;
-          const b = (ch.number >> 4) & 0xF;
-          const sb = ch.number & 0xF;
-          const bLabel = bankMap[b] || '?';
-          const sLabel = subMap[sb] || '?';
-          if (bLabel !== lastBank) {
-            mrows += '<tr><td class="bank-header" colspan="2">Bank ' + bLabel + '</td></tr>';
-            lastBank = bLabel;
+          const activeChannel = s.channel && s.channel.id === ch.id;
+          if (ch.band !== lastBand) {
+            const bandInfo = bandByOrdinal.get(ch.band);
+            const bandTitle = bandInfo
+              ? bandInfo.name + ' (#' + bandInfo.ordinal + ', hw=0x' + bandInfo.hardware.toString(16) + ')'
+              : 'Band #' + ch.band + ' (undeclared)';
+            mrows += '<tr><td class="bank-header" colspan="2">' + escHtml(bandTitle) + '</td></tr>';
+            lastBand = ch.band;
           }
-          const style = active ? ' style="color:var(--accent);font-weight:600"' : '';
-          mrows += '<tr><td class="key"' + style + '>' + (active ? '> ' : '  ') + sLabel + '</td><td class="val"' + style + '>' + escHtml(ch.name) + '</td></tr>';
+          const style = activeChannel ? ' style="color:var(--accent);font-weight:600"' : '';
+          mrows += '<tr><td class="key"' + style + '>' + (activeChannel ? '> ' : '  ') + ch.order + '</td><td class="val"' + style + '>' + escHtml(ch.name) + '</td></tr>';
         });
         mapTable.innerHTML = mrows;
       }
@@ -751,6 +782,9 @@
 
       // Sync tint sliders
       syncTintFromServer(s.displayTint);
+
+      // Sync tuner panel
+      syncTunerFromServer(s.tuner);
     }
 
     function escHtml(s) {
@@ -760,18 +794,25 @@
     }
 
     // --- Virtual dial ---
+    //
+    // The physical rotary switch produces an 8-bit "channel selector"
+    // whose top nibble picks a band and whose bottom nibble is
+    // irrelevant when the AS5600 tuner is active (the needle picks the
+    // station within the band). The virtual dial mirrors that: Bank
+    // buttons inject a band's hardware nibble, sub-nibble stays 0.
+    //
+    // bandHwList is populated on every state message from s.bands so
+    // the Bank buttons always match the current channels.json.
 
-    // Reverse maps: label -> hardware value
-    const bankLabelToHw = { 1: 12, 2: 8, 3: 10, 4: 3 };
-    const subLabelToHw  = { 1: 0, 2: 1, 3: 8, 4: 10, 5: 12 };
+    let bandHwList = [];   // [{ ordinal, hardware, name }, ...]
 
-    // Current virtual dial state (labels, not hw values)
-    const dial = { power: 0, bt: 0, bank: 1, sub: 1, mono: 0 };
+    // Current virtual dial state
+    const dial = { power: 0, bt: 0, bankHw: 0, mono: 0 };
 
     function dialComputeRaw() {
-      const bankHw = bankLabelToHw[dial.bank] || 0;
-      const subHw = subLabelToHw[dial.sub] || 0;
-      return (dial.mono << 10) | (dial.power << 9) | (dial.bt << 8) | (bankHw << 4) | subHw;
+      // Sub-nibble is always 0 in virtual injections. The tuner (or the
+      // gpio.ts fallback) decides the actual channel from the band.
+      return (dial.mono << 10) | (dial.power << 9) | (dial.bt << 8) | (dial.bankHw << 4);
     }
 
     async function setVolume() {
@@ -801,28 +842,37 @@
       }
     }
 
+    /** Rebuild the Band button row whenever the server-sent bands list changes. */
+    function renderBandButtons() {
+      const container = $('dial-bank');
+      const currentKey = bandHwList.map(b => b.ordinal + ':' + b.hardware).join('|');
+      if (container.dataset.key === currentKey) return;
+      container.dataset.key = currentKey;
+      container.innerHTML = '';
+      bandHwList.forEach(band => {
+        const b = document.createElement('button');
+        b.className = 'dial-btn';
+        b.dataset.val = String(band.hardware);
+        b.textContent = String(band.ordinal);
+        b.title = band.name + ' (hw=0x' + band.hardware.toString(16) + ')';
+        b.onclick = () => dialSet('bankHw', band.hardware);
+        container.appendChild(b);
+      });
+    }
+
     function updateDialButtons() {
-      // Power
       const pwrBtns = $('dial-power').children;
       for (const b of pwrBtns) {
         b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.power ? ' active-green' : '');
       }
-      // Bluetooth
       const btBtns = $('dial-bt').children;
       for (const b of btBtns) {
         b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.bt ? ' active-blue' : '');
       }
-      // Bank
       const bankBtns = $('dial-bank').children;
       for (const b of bankBtns) {
-        b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.bank ? ' active-amber' : '');
+        b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.bankHw ? ' active-amber' : '');
       }
-      // Sub
-      const subBtns = $('dial-sub').children;
-      for (const b of subBtns) {
-        b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.sub ? ' active-amber' : '');
-      }
-      // Mono
       const monoBtns = $('dial-mono').children;
       for (const b of monoBtns) {
         b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.mono ? ' active-green' : '');
@@ -831,21 +881,20 @@
 
     // Sync virtual dial state from WebSocket data
     function syncDialFromState(s) {
+      // Refresh the band button row if the server-sent list changed.
+      const nextBands = Array.isArray(s.bands) ? s.bands : [];
+      const changed = nextBands.length !== bandHwList.length
+        || nextBands.some((b, i) => b.hardware !== bandHwList[i]?.hardware || b.ordinal !== bandHwList[i]?.ordinal);
+      if (changed) {
+        bandHwList = nextBands.slice().sort((a, b) => a.ordinal - b.ordinal);
+        renderBandButtons();
+      }
+
       const raw = s.rawGpio || 0;
       dial.mono = (raw >> 10) & 1;
       dial.power = (raw >> 9) & 1;
       dial.bt = (raw >> 8) & 1;
-
-      const bankRaw = (raw >> 4) & 0xF;
-      const subRaw = raw & 0xF;
-
-      // Find label from hardware value (reverse lookup)
-      const bankLabel = Object.entries(bankLabelToHw).find(([, hw]) => hw === bankRaw);
-      const subLabel = Object.entries(subLabelToHw).find(([, hw]) => hw === subRaw);
-
-      dial.bank = bankLabel ? parseInt(bankLabel[0]) : 0;
-      dial.sub = subLabel ? parseInt(subLabel[0]) : 0;
-
+      dial.bankHw = (raw >> 4) & 0xF;
       updateDialButtons();
     }
 
@@ -936,6 +985,82 @@
       $('tint-r-val').textContent = (+t.r).toFixed(2);
       $('tint-g-val').textContent = (+t.g).toFixed(2);
       $('tint-b-val').textContent = (+t.b).toFixed(2);
+    }
+
+    // --- Tuner ---
+
+    let lastTunerInvert = false;
+
+    function syncTunerFromServer(t) {
+      if (!t) return;
+      const statusEl = $('tuner-status');
+      const rawEl = $('tuner-raw');
+      const minEl = $('tuner-min');
+      const maxEl = $('tuner-max');
+      const bandEl = $('tuner-band');
+      const fracEl = $('tuner-fraction');
+      const chEl = $('tuner-channels');
+      const wedgesEl = $('tuner-wedges');
+      const needleEl = $('tuner-needle');
+      const invertLabel = $('tuner-invert-label');
+
+      statusEl.textContent = t.ready ? 'ready' : 'not available';
+      rawEl.textContent = t.latestRaw != null ? String(t.latestRaw) : '—';
+      minEl.textContent = t.calibration ? String(t.calibration.minRaw) : '—';
+      maxEl.textContent = t.calibration ? String(t.calibration.maxRaw) : '—';
+      bandEl.textContent = '0x' + (t.band || 0).toString(16);
+      fracEl.textContent = t.fraction != null ? (+t.fraction).toFixed(3) : '—';
+
+      const channels = t.channelsInBand || [];
+      chEl.textContent = channels.length ? channels.map(c => c.name).join(', ') : '(none in this band)';
+
+      // Wedges: divide the track into equal segments per channel in the band
+      if (channels.length > 0) {
+        const w = 100 / channels.length;
+        let html = '';
+        for (let i = 0; i < channels.length; i++) {
+          const left = i * w;
+          const isActive = i === Math.min(channels.length - 1, Math.max(0, Math.floor((t.fraction || 0) * channels.length)));
+          const bg = isActive ? 'rgba(255,140,0,0.15)' : 'transparent';
+          const border = i > 0 ? '1px solid rgba(255,255,255,0.15)' : 'none';
+          html += '<div style="position:absolute;top:0;bottom:0;left:' + left + '%;width:' + w + '%;background:' + bg + ';border-left:' + border + '"></div>';
+        }
+        wedgesEl.innerHTML = html;
+      } else {
+        wedgesEl.innerHTML = '';
+      }
+      needleEl.style.left = ((t.fraction || 0) * 100).toFixed(2) + '%';
+
+      // Invert label
+      const inv = !!(t.calibration && t.calibration.invert);
+      if (inv !== lastTunerInvert) {
+        lastTunerInvert = inv;
+        invertLabel.textContent = 'Invert: ' + (inv ? 'on' : 'off');
+      }
+    }
+
+    async function tunerCalibrate(kind) {
+      try {
+        const r = await fetch('/api/tuner/calibrate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind })
+        });
+        const j = await r.json();
+        if (!j.success) alert('Calibrate failed: ' + (j.error || 'unknown'));
+      } catch (e) { alert('Calibrate failed: ' + e.message); }
+    }
+
+    async function tunerToggleInvert() {
+      try {
+        const r = await fetch('/api/tuner/invert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invert: !lastTunerInvert })
+        });
+        const j = await r.json();
+        if (!j.success) alert('Invert failed: ' + (j.error || 'unknown'));
+      } catch (e) { alert('Invert failed: ' + e.message); }
     }
 
     // --- System actions ---

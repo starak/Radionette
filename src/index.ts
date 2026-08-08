@@ -8,7 +8,10 @@ import { startGpio, stopGpio, getBacklightHandle } from "./gpio";
 import { startBacklight, stopBacklight } from "./backlight";
 import { startWebServer, stopWebServer } from "./web";
 import { initWifi } from "./wifi";
+import { initAdc, stopAdc } from "./adc";
 import { initVolume, stopVolume } from "./volume";
+import { initTuner, stopTuner } from "./tuner";
+import { initArtwork, stopArtwork } from "./artwork";
 import {
   initDisplayService,
   stopDisplayService,
@@ -49,11 +52,19 @@ startWebServer();
 // 7. Initialize WiFi module (dev-mode detection, API endpoints)
 initWifi();
 
-// 8. Start GPIO polling (drives state changes)
+// 8. Open the shared ADS1115 (I2C bus 1). Must come BEFORE volume and
+//    tuner, both of which read individual channels via adc.ts.
+initAdc();
+
+// 9. Start the tuner BEFORE gpio so gpio.ts can query isTunerActive()
+//    on its very first debounced read.
+initTuner();
+
+// 10. Start GPIO polling (drives state changes, feeds band into tuner)
 startGpio();
 
-// 8b. Start backlight controller (PWM on the backlight pin opened by gpio.ts).
-//     Must come AFTER startGpio() so the pin is already in OUTPUT mode.
+// 10b. Start backlight controller (PWM on the backlight pin opened by gpio.ts).
+//      Must come AFTER startGpio() so the pin is already in OUTPUT mode.
 const blHandle = getBacklightHandle();
 if (blHandle) {
   startBacklight(blHandle.rpio, blHandle.pin);
@@ -61,10 +72,13 @@ if (blHandle) {
   console.warn("[Backlight] No GPIO handle (dev mode) — backlight inactive");
 }
 
-// 9. Initialize volume ADC (I2C ADS1115 → PulseAudio master volume)
+// 11. Initialize volume (reads AIN0 via adc.ts)
 initVolume();
 
-// 10. Initialize display service. Done last so all state-emitting modules are
+// 11b. Album-art lookup driven by player metadata.
+initArtwork();
+
+// 12. Initialize display service. Done last so all state-emitting modules are
 //     already wired; the service immediately paints the current state.
 //     Any failure here must NOT take down the rest of the radio.
 initDisplayService({
@@ -88,6 +102,9 @@ async function shutdown(): Promise<void> {
     console.error("[Display] shutdown error:", err);
   }
   stopVolume();
+  stopArtwork();
+  stopTuner();
+  stopAdc();
   // Stop backlight before gpio.ts closes the pin.
   stopBacklight();
   stopGpio();

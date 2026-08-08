@@ -88,11 +88,43 @@ export function resolveLogoPath(ref: string | undefined | null): string | null {
 /**
  * Load and cache a logo. Returns the rendered RGB565 frame(s).
  *
- * If `ref` resolves to a missing file, falls back to `defaultLogo`. If THAT
- * is also missing, returns a solid black single-frame logo so callers always
- * get something paintable.
+ * `ref` may be:
+ *   - a filename inside logoDir (e.g. "NRK-P1.png")
+ *   - an absolute filesystem path
+ *   - an http(s):// URL (fetched, decoded, kept in memory only)
+ *
+ * If `ref` is missing or fails to resolve/fetch/decode, falls back to
+ * the configured `defaultLogo`. If THAT is also missing, returns a
+ * solid black single-frame logo so callers always get something
+ * paintable.
  */
 export async function loadLogo(ref: string | undefined | null): Promise<RenderedLogo> {
+  if (typeof ref === "string" && /^text:/i.test(ref)) {
+    const cached = cache.get(ref);
+    if (cached) return cached;
+    try {
+      const logo = await renderTextLogo(ref);
+      cache.set(ref, logo);
+      return logo;
+    } catch (err) {
+      console.error(`[Logos] Failed to render text logo ${ref}:`, err);
+      // Fall through to default fallback below
+    }
+  }
+
+  if (typeof ref === "string" && /^https?:\/\//i.test(ref)) {
+    const cached = cache.get(ref);
+    if (cached) return cached;
+    try {
+      const logo = await renderRemote(ref);
+      cache.set(ref, logo);
+      return logo;
+    } catch (err) {
+      console.error(`[Logos] Failed to fetch/render ${ref}:`, err);
+      // Fall through to default fallback below
+    }
+  }
+
   let abs = resolveLogoPath(ref);
   if (!abs) {
     abs = resolveLogoPath(opts.defaultLogo);
@@ -185,6 +217,187 @@ async function renderStill(absPath: string): Promise<RenderedLogo> {
     frames: [{ rgb565: rgba8888ToRgb565(rgba), delayMs: Infinity }],
     animated: false,
   };
+}
+
+/**
+ * Fetch a PNG/JPEG from an http(s):// URL and render it into a
+ * RenderedLogo. Bytes are held only long enough to decode; the cache
+ * stores the RGB565 frame. Animated URLs (GIFs) aren't supported here
+ * — the artwork feed we point this at (iTunes) only serves static
+ * images anyway.
+ */
+async function renderRemote(url: string): Promise<RenderedLogo> {
+  const ac = new AbortController();
+  const timeout = setTimeout(() => ac.abort(), 8000);
+  let bytes: Buffer;
+  try {
+    const res = await fetch(url, { signal: ac.signal });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const ab = await res.arrayBuffer();
+    bytes = Buffer.from(ab);
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  const { loadImage } = canvas();
+  const img = await loadImage(bytes);
+  const { canvas: c, ctx } = makeRoundCanvas();
+  drawContained(ctx, img, img.width, img.height);
+  ctx.restore();
+  const rgba = ctx.getImageData(0, 0, WIDTH, HEIGHT).data;
+  return {
+    source: url,
+    frames: [{ rgb565: rgba8888ToRgb565(rgba), delayMs: Infinity }],
+    animated: false,
+  };
+}
+
+/**
+ * Render a text-only logo from a `text:<id>|<display name>` reference.
+ * Used as a graceful fallback for channels that don't have (or have
+ * not yet been given) a proper logo file: rather than showing a
+ * generic `default.png` for every unbranded station, we synthesise a
+ * coloured tile with the channel name centred on it. Colour is
+ * deterministic per id so a given station always looks the same.
+ *
+ * Reference format:
+ *   text:<stable id>|<display name>
+ *   text:<display name>              // id defaults to the name
+ *
+ * Rendered via an SVG data URI + loadImage() rather than direct
+ * fillRect/fillText calls on the 2D context. On Pi OS Trixie (Debian
+ * 13) the shipped Cairo 1.18 is incompatible with the prebuilt
+ * node-canvas 2.11.2 in a way that leaves fillRect/fillText silently
+ * no-op — the target canvas stays black even though the drawing
+ * commands succeed. SVG rasterisation goes through a different code
+ * path in node-canvas and works fine, so we lean on that instead.
+ */
+async function renderTextLogo(ref: string): Promise<RenderedLogo> {
+  const rest = ref.slice("text:".length);
+  const pipe = rest.indexOf("|");
+  const id = pipe >= 0 ? rest.slice(0, pipe) : rest;
+  const displayName = pipe >= 0 ? rest.slice(pipe + 1) : rest;
+  const key = id || displayName || "?";
+  const label = (displayName || key).trim() || "?";
+
+  // Deterministic hue from the id — DJB2-ish hash so tweaks to a name
+  // don't shift every colour.
+  let hash = 5381;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) + hash + key.charCodeAt(i)) >>> 0;
+  }
+  const hue = hash % 360;
+
+  // 240x240 round panel. The text lives inside a slightly-inset badge
+  // (~72px radius = 144px diameter) so the outer ring of the circle
+  // stays as background and gives the tile some visual breathing room
+  // against the panel rim. Everything must fit inside the badge — a
+  // conservative safe rectangle of ~100x100 keeps text off the rim
+  // even after a bit of anti-aliased outline.
+  const BADGE_RADIUS = 96;
+  const SAFE_WIDTH = 132;
+
+  // Word-wrap the label into up to 3 lines. Prefer more/shorter lines
+  // over a single wide line — a circular panel penalises horizontal
+  // text more than a rectangular one.
+  const lines = wrapText(label, 8);
+  const fontSize = chooseFontSize(lines);
+  const lineHeight = Math.round(fontSize * 1.15);
+  const totalTextHeight = lineHeight * lines.length;
+  const firstBaselineY = HEIGHT / 2 - totalTextHeight / 2 + lineHeight / 2;
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="55%" fx="50%" fy="45%">
+      <stop offset="0%" stop-color="hsl(${hue}, 75%, 48%)"/>
+      <stop offset="100%" stop-color="hsl(${hue}, 80%, 22%)"/>
+    </radialGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.2"/>
+      <feOffset dx="0" dy="1"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.65"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="${WIDTH}" height="${HEIGHT}" fill="#000000"/>
+  <circle cx="${WIDTH / 2}" cy="${HEIGHT / 2}" r="${BADGE_RADIUS}" fill="url(#bg)"/>
+  <g font-family="Helvetica, Arial, sans-serif" font-weight="700" font-size="${fontSize}" fill="#ffffff" text-anchor="middle" filter="url(#shadow)">
+${lines
+  .map(
+    (line, i) =>
+      `    <text x="${WIDTH / 2}" y="${firstBaselineY + i * lineHeight}" dominant-baseline="middle">${escapeXml(line)}</text>`,
+  )
+  .join("\n")}
+  </g>
+</svg>`;
+  // SAFE_WIDTH is enforced by chooseFontSize + wrapText: fonts are
+  // picked small enough and lines are wrapped tight enough that
+  // typical BBC/NRK station-name lines fit inside SAFE_WIDTH.
+  void SAFE_WIDTH;
+
+  const { createCanvas, loadImage } = canvas();
+  const img = await loadImage(Buffer.from(svg));
+  const c = createCanvas(WIDTH, HEIGHT);
+  const ctx = c.getContext("2d") as any;
+  ctx.drawImage(img, 0, 0, WIDTH, HEIGHT);
+  const rgba = ctx.getImageData(0, 0, WIDTH, HEIGHT).data;
+  return {
+    source: ref,
+    frames: [{ rgb565: rgba8888ToRgb565(rgba), delayMs: Infinity }],
+    animated: false,
+  };
+}
+
+/**
+ * Rough word-wrap into up to 3 lines by target character count per
+ * line. We can't measure text width without a functional 2D context so
+ * we approximate; the SVG then uses textLength to squeeze any line that
+ * still overflows.
+ */
+function wrapText(label: string, targetCharsPerLine: number): string[] {
+  const words = label.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [label];
+  if (words.length === 1) return [words[0]];
+
+  const lines: string[] = [];
+  let current = words[0];
+  for (let i = 1; i < words.length; i++) {
+    const attempt = `${current} ${words[i]}`;
+    if (attempt.length <= targetCharsPerLine || lines.length === 2) {
+      current = attempt;
+    } else {
+      lines.push(current);
+      current = words[i];
+    }
+    if (lines.length === 2) {
+      current = [current, ...words.slice(i + 1)].join(" ");
+      break;
+    }
+  }
+  lines.push(current);
+  return lines.slice(0, 3);
+}
+
+/**
+ * Pick a font size so the vertical stack of lines fits inside the
+ * central badge (~96px radius). Sized conservatively so text stays
+ * well inside the badge circumference even for longer names.
+ */
+function chooseFontSize(lines: string[]): number {
+  if (lines.length >= 3) return 24; // 3 * 24 * 1.15 ≈ 83px stack
+  if (lines.length === 2) return 32; // 2 * 32 * 1.15 ≈ 74px stack
+  return 42;                          // single line up to ~48px tall
+}
+
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 async function renderGif(absPath: string): Promise<RenderedLogo> {

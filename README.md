@@ -4,11 +4,12 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 
 ## What It Does
 
-- **Radio mode:** A rotary dial switch selects from 15+ internet radio stations via GPIO. Audio plays through the Pi's 3.5mm jack or HDMI.
+- **Radio mode:** A rotary switch selects a band (e.g. Norsk, BBC) and a magnetic angle sensor on the tuning needle picks a station within the band. 30+ internet radio streams (HTTP MP3/icecast and HLS). Audio plays through the Pi's 3.5mm jack or HDMI.
 - **Bluetooth mode:** The Pi becomes a discoverable Bluetooth speaker called "Radionette" (with a speaker icon on your phone). Pair and stream music from any device.
+- **Round-panel display:** A GC9A01 1.28" round IPS display shows the current channel logo, or dynamically-fetched album art matching the current song from iTunes Search. Channels without a proper logo file get a synthesised text-tile logo.
 - **Web status page:** A live dashboard at `http://radionette.local:8080/` shows current station, now-playing metadata, and Bluetooth status. Tab navigation links to WiFi settings and a debug page.
 - **WiFi configuration:** If the Pi can't connect to a known WiFi network at boot, it creates an open hotspot (`Radionette-Setup`, no password). Connect to the hotspot and visit `http://10.42.0.1:8080/wifi` to configure a network. WiFi settings are also always accessible at `http://radionette.local:8080/wifi` when connected to the same network.
-- **Debug page:** A live view of GPIO bit state, decoded bank/sub-channel values, full state dump, and grouped channel map at `http://radionette.local:8080/debug`. Includes a virtual dial for switching channels from the browser (with a reset-to-physical button), plus WiFi reset and system reboot controls.
+- **Debug page:** A live view of GPIO bit state, current band, tuner needle position with per-band wedge markers, full state dump, and grouped channel map at `http://radionette.local:8080/debug`. Includes a virtual dial for switching bands from the browser, tuner calibration buttons, WiFi reset and system reboot controls.
 - **Hotspot bleep alert:** When the Pi is in radio mode and the hotspot is active (no WiFi configured), a periodic bleep sounds through the speaker to alert the user to set up WiFi.
 - **Auto-retry playback:** If the radio stream fails (e.g. no internet during hotspot mode), the player retries with escalating backoff (5s, 10s, 30s). Playback also resumes automatically when WiFi is configured via the settings page.
 
@@ -19,7 +20,8 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 - Mono/stereo switch on 1 GPIO input pin
 - 2 LEDs (power + Bluetooth indicator)
 - GC9A01 1.28" 240x240 round IPS display on SPI0
-- ADS1115 16-bit ADC on I2C bus 1 for the volume potentiometer
+- ADS1115 16-bit ADC on I2C bus 1 for the volume potentiometer (AIN0)
+- AS5600 12-bit magnetic angle sensor on I2C bus 1 (address 0x36), reading the tuning-needle shaft angle directly over I2C
 - Audio output via 3.5mm jack or HDMI
 
 ### GPIO Pin Assignments
@@ -92,18 +94,59 @@ Bare GC9A01 panel (14/15-pin variant). Backlight (LEDA) is switched by GPIO 13 t
 
 **Backlight switching:** N-channel MOSFET (e.g. 2N7000, AO3400) — gate to GPIO 13 (Pi pin 33), source to GND, drain to LEDK; LEDA stays on 3V3. Alternatively a P-channel high-side switch on the LEDA rail. The `backlight.ts` module drives the gate on/off (no PWM) with a 10 s auto-off after the last user-visible event (channel change, BT device connect). Stays on while in BT search mode.
 
+### Analog Tuner Wiring (AS5600 + ADS1115)
+
+The volume potentiometer is read via an ADS1115 ADC on I2C bus 1; the AS5600 magnetic angle sensor sits on the same bus at a different address. Both chips share SDA/SCL, VDD and GND. The tuner reads angle over I2C directly (not through the ADS1115), so ADS1115 AIN1 is left free for future use.
+
+| Signal | Wire from | Wire to | Notes |
+|---|---|---|---|
+| ADS1115 VDD | Pi 3V3 (pin 1 or 17) | ADS1115 VDD | Shared 3V3 with AS5600 |
+| ADS1115 GND | Pi GND | ADS1115 GND | |
+| ADS1115 SDA | Pi GPIO 2 (pin 3) | ADS1115 SDA | Shared I2C bus |
+| ADS1115 SCL | Pi GPIO 3 (pin 5) | ADS1115 SCL | Shared I2C bus |
+| ADS1115 ADDR | GND | ADS1115 ADDR | → address 0x48 |
+| ADS1115 AIN0 | volume pot wiper | ADS1115 AIN0 | See "Volume" |
+| ADS1115 AIN1 | *unused* | — | Reserved for future analog input |
+| AS5600 VDD | Pi 3V3 | AS5600 VDD | |
+| AS5600 GND | Pi GND | AS5600 GND | |
+| AS5600 SDA | Pi GPIO 2 (pin 3) | AS5600 SDA | Shared I2C bus with ADS1115 |
+| AS5600 SCL | Pi GPIO 3 (pin 5) | AS5600 SCL | Shared I2C bus with ADS1115 |
+| AS5600 DIR | GND | AS5600 DIR | Fix direction; can be inverted in software instead |
+| AS5600 OUT | *not connected* | — | Analog OUT is unused; we read angle over I2C |
+| AS5600 PGO | *not connected* | — | |
+
+The AS5600's DIR pin must be tied to a defined level. Tying it to GND selects one rotation direction; if the needle ends up moving the wrong way through the channel list, either flip DIR to 3V3 or use the "Invert" toggle in the `/debug` Tuner panel.
+
+**Magnet:** a diametrically-magnetized disc (typically 6 mm × 3 mm) glued to the needle shaft, 0.5-3 mm above the AS5600 IC surface. The `/debug` Tuner panel captures the two mechanical endpoints (as 12-bit angle counts, 0..4095) and stores them in `~/.radionette/tuner-calibration.json`. The tuner correctly handles calibrations that straddle the 0/4095 wrap point.
+
+**How tuning works:** the top nibble (bits 7-4) of the existing 8-bit rotary selector switch chooses the band via the `bands` table in `channels.json`; the AS5600 needle angle then picks a station within that band by dividing the calibrated sweep into equal wedges (one per station currently in the band). When the AS5600 is missing or uncalibrated the code falls back to playing the first channel (by `order`) in the current band, so the radio always has something to play as long as the band has at least one station. Physical rotary positions whose hardware nibble doesn't match any declared band are silent.
+
+**Magnet health:** the tuner polls the AS5600 STATUS register once per second and logs transitions (`OK` ↔ `TOO WEAK` / `TOO STRONG` / `NOT DETECTED`) along with the AGC value. If the magnet falls out of alignment or drops off entirely, you'll see a `[Tuner] AS5600 magnet OK → NOT DETECTED` log line and the fraction reading will freeze at the last-known value.
+
 ### Logo Assets
 
 Channel and mode logos are PNG or animated GIF files in `assets/channel-logos/`. They're rendered at native size into a 240x240 round-masked frame ("contain" fit, centred, black corners).
 
 - Reference channel logos from `channels.json` via the `logo` field, e.g. `"logo": "NRK-P1.png"`.
 - Special filenames consumed by the display service:
-  - `default.png` — fallback when a channel has no `logo` or the file is missing.
+  - `default.png` — shown during the power-on splash.
   - `bluetooth.png` — shown in BT mode while no device is connected.
   - `bluetooth-connected.png` — shown in BT mode while a device is connected.
+- Channels with no `logo` field, or a `logo` pointing at a missing file, get a **synthesised text-tile logo** at runtime — a coloured circular badge with the station name centred on it, hue deterministic per channel id. See "Configuring Stations" below.
 - Animated GIFs play indefinitely; per-frame delays from the GIF are honoured (clamped to >=20 ms).
 - Logos are cached in memory after first decode; restart radionette to pick up file changes.
 - On every power-on, `default.png` is shown for 2 s before the channel/BT logo appears (a brief "splash" so the panel doesn't snap straight to content).
+
+### Now-playing album art
+
+Radio streams don't carry image URLs in their metadata — ICY tags and HLS manifests only expose text. What they do carry is a "Now playing" string that usually formats as `Artist - Song`. When a new title arrives on `player:metadata`, `src/artwork.ts` parses the string, queries the free iTunes Search API for that song, and — on a hit — pushes the album-art URL through `radioState.setArtwork()`. The display service prefers this URL over the channel's static logo whenever it's fresh, and falls back to `channel.logo` on:
+
+- No metadata yet (just tuned in)
+- Metadata that isn't `Artist - Song` (news, programme names, station idents)
+- iTunes miss (song not in the catalogue)
+- Channel change or player stop (artwork is cleared)
+
+The URL is downloaded and decoded through the same logo pipeline (240x240, round-masked). Results are cached in memory keyed by `Artist - Title` so repeated songs don't re-hit the API. Everything is opportunistic — a network hiccup or an API 500 just leaves the channel logo in place.
 
 ## Raspberry Pi Setup
 
@@ -204,20 +247,30 @@ Some files contain settings specific to this setup that you'll want to adapt:
 
 ## Configuring Stations
 
-Edit `channels.json` to add or change radio stations. Each entry maps a dial position (GPIO bits 0-7 decimal value) to a station:
+Edit `channels.json`. The file has two top-level arrays: `bands` and `channels`.
 
 ```json
 {
-  "channels": {
-    "192": { "name": "NRK P1", "url": "https://lyd.nrk.no/...", "logo": "NRK-P1.png" },
-    "48":  { "name": "Radio Rock", "url": "https://live-bauerno.sharp-stream.com/...", "logo": "RadioRock.png" }
-  }
+  "bands": [
+    { "ordinal": 1, "hardware": 12, "name": "Band 1" },
+    { "ordinal": 2, "hardware": 8,  "name": "Band 2" },
+    { "ordinal": 3, "hardware": 10, "name": "Band 3" },
+    { "ordinal": 4, "hardware": 3,  "name": "Band 4" }
+  ],
+  "channels": [
+    { "id": "nrk-p1",     "band": 1, "order": 10,  "name": "NRK P1",       "url": "https://lyd.nrk.no/...", "logo": "NRK-P1.png" },
+    { "id": "bbc-r1",     "band": 1, "order": 200, "name": "BBC Radio 1",  "url": "https://as-hls-ww-live.akamaized.net/...", "logo": "BBC-Radio-1.png" },
+    { "id": "radio-rock", "band": 2, "order": 10,  "name": "Radio Rock",   "url": "https://live-bauerno.sharp-stream.com/...", "logo": "RadioRock.png" }
+  ]
 }
 ```
 
-The optional `logo` field is a filename (PNG or GIF) under `assets/channel-logos/`; if omitted or missing on disk, `default.png` is shown on the round display.
+- **Bands** are the physical rotary switch positions. `ordinal` is the logical band number used in code and UI. `hardware` is the raw top-nibble (0..15) the physical rotary produces for this band. `name` is a human label.
+- **Channels** each reference a `band` ordinal and carry an `order` value that decides where the station falls on the tuner's needle sweep — the AS5600 divides the sweep into equal wedges (one per channel in the current band) and stations are laid out in increasing `order` from the CCW end to the CW end. Sparse values (10, 20, 30, ...) let you insert new stations between existing ones without renumbering.
+- **`id`** is a stable string identifier used in logs and in the state broadcast.
+- **`logo`** is a filename (PNG or GIF) under `assets/channel-logos/`. If omitted (or the file is missing), the display service generates a text-only fallback logo from the channel name at runtime — a coloured circular tile with the station name centred on it. The colour is deterministic per `id` so a given station always looks the same.
 
-The channel number is composed of two nibbles: bits 7-4 select the bank, bits 3-0 select the sub-channel within the bank. See the debug page (`/debug`) for a visual breakdown.
+There is **no cap** on channels per band — 4 channels or 40, the needle fills the full sweep either way. Bands with no channels are silent. Physical rotary positions whose hardware nibble doesn't match any declared band are also silent.
 
 **Supported stream types:**
 
@@ -229,29 +282,45 @@ The channel number is composed of two nibbles: bits 7-4 select the bank, bits 3-
 ```
 radionette/
   src/
-    index.ts          # Entry point
-    state.ts          # Central state machine + event emitter
-    gpio.ts           # GPIO polling, debounce, LED control
-    channels.ts       # Channel lookup from channels.json
-    player.ts         # mpg123 (MP3) / ffmpeg (HLS) child process management
-    bluetooth.ts      # Bluetooth A2DP sink management
-    audio.ts          # Mono/stereo mixing (PulseAudio remap-sink)
-    wifi.ts           # WiFi scanning, connecting, hotspot (nmcli)
-    hotspot-alert.ts  # Periodic bleep when hotspot is active in radio mode
-    web.ts            # HTTP + WebSocket server
+    index.ts             # Entry point — wires all modules
+    state.ts             # Central state machine + event emitter
+    gpio.ts              # GPIO polling, debounce, LED control
+    channels.ts          # channels.json loader; bands + channels indexes
+    player.ts            # mpg123 (MP3) / ffmpeg (HLS) child process management
+    bluetooth.ts         # Bluetooth A2DP sink management
+    audio.ts             # Mono/stereo mixing (PulseAudio remap-sink)
+    adc.ts               # Shared ADS1115 access on /dev/i2c-1
+    volume.ts            # Volume pot reader (ADS1115 AIN0)
+    tuner.ts             # AS5600 magnetic angle tuner over I2C
+    artwork.ts           # Now-playing metadata -> iTunes album-art lookup
+    backlight.ts         # Display backlight controller (GPIO 13)
+    display.ts           # Low-level GC9A01 SPI driver
+    display-service.ts   # State -> logo mapping (channel/artwork/text-tile)
+    render/
+      displayController.ts # Paint queue, animation timer
+      logos.ts             # Logo loader: files, http URLs, text: tiles
+      frame.ts             # RGBA8888 -> RGB565 + display tint
+    wifi.ts              # WiFi scanning, connecting, hotspot (nmcli)
+    hotspot-alert.ts     # Periodic bleep when hotspot is active in radio mode
+    web.ts               # HTTP + WebSocket server
     public/
-      index.html      # Status page (single-file, inline CSS/JS)
-      wifi.html       # WiFi settings page (single-file, inline CSS/JS)
-      debug.html      # Debug page (GPIO bits, state dump, channel map)
-    gpio-logger.ts    # Utility for mapping dial positions
+      index.html         # Status page (single-file, inline CSS/JS)
+      wifi.html          # WiFi settings page (single-file, inline CSS/JS)
+      debug.html         # Debug page (GPIO bits, state, tuner, channel map)
+    gpio-logger.ts       # Utility for mapping dial positions
+    scripts/
+      display-smoke.ts       # Colour-bar hardware test for the GC9A01
+      display-render-test.ts # Cycle every channel logo through the pipeline
+      as5600-monitor.ts      # Live AS5600 angle/health monitor
   assets/
-    bt-connect.wav    # Sound: device connected
-    bt-ready.wav      # Sound: BT mode active / device disconnected
-    hotspot-bleep.wav # Sound: 880Hz tone + silence, loops while hotspot active
-  channels.json       # Station configuration
-  deploy.sh           # Build + deploy script
-  setup-pi.sh         # One-time Pi setup script
-  wifi-fallback.sh    # Boot script: start hotspot if no WiFi
+    channel-logos/       # Per-station logo PNG/GIF files (+ default/bluetooth)
+    bt-connect.wav       # Sound: device connected
+    bt-ready.wav         # Sound: BT mode active / device disconnected
+    hotspot-bleep.wav    # Sound: 880Hz tone + silence, loops while hotspot active
+  channels.json          # Band + station configuration
+  deploy.sh              # Build + deploy script
+  setup-pi.sh            # One-time Pi setup script
+  wifi-fallback.sh       # Boot script: start hotspot if no WiFi
   package.json
   tsconfig.json
 ```
