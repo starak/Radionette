@@ -21,7 +21,7 @@
 import * as path from "path";
 import { radioState, RadioState } from "./state";
 import { displayController } from "./render/displayController";
-import { loadLogo, clearLogoCache } from "./render/logos";
+import { loadLogo, clearLogoCache, resolveLogoPath } from "./render/logos";
 import { setTint, getTint, Tint } from "./render/frame";
 import { setBacklightOverrideLock } from "./backlight";
 
@@ -53,9 +53,19 @@ function pickLogoForState(s: RadioState): string | null {
   }
   if (s.mode === "radio") {
     // Prefer live album art when we have it — falls back to the channel
-    // logo (or default) when there's no match or no metadata parsed.
+    // logo when there's no match or no metadata parsed.
     if (s.nowPlayingArtwork?.url) return s.nowPlayingArtwork.url;
-    if (s.channel) return s.channel.logo ?? opts!.defaultLogo;
+    if (s.channel) {
+      // If the channel has a real logo file, use it. Otherwise generate a
+      // text tile from the channel name so we never fall through to the
+      // generic default.png. The "text:" scheme is recognised by the logo
+      // loader which builds a coloured circle with the name centred.
+      if (s.channel.logo) {
+        const resolved = resolveLogoPath(s.channel.logo);
+        if (resolved) return s.channel.logo;
+      }
+      return `text:${s.channel.id}|${s.channel.name}`;
+    }
   }
   // mode === "off" while powered, or radio with no channel, or anything else
   return opts!.defaultLogo;

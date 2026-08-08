@@ -266,7 +266,7 @@ Edit `channels.json`. The file has two top-level arrays: `bands` and `channels`.
 - **Bands** are the physical rotary switch positions. `ordinal` is the logical band number used in code and UI. `hardware` is the raw top-nibble (0..15) the physical rotary produces for this band. `name` is a human label.
 - **Channels** each reference a `band` ordinal and carry an `order` value that decides where the station falls on the tuner's needle sweep — the AS5600 divides the sweep into equal wedges (one per channel in the current band) and stations are laid out in increasing `order` from the CCW end to the CW end. Sparse values (10, 20, 30, ...) let you insert new stations between existing ones without renumbering.
 - **`id`** is a stable string identifier used in logs and in the state broadcast.
-- **`logo`** is a filename (PNG or GIF) under `assets/channel-logos/`; if omitted or the file is missing, `default.png` is shown on the round display.
+- **`logo`** is a filename (PNG or GIF) under `assets/channel-logos/`. If omitted (or the file is missing), the display service generates a text-only fallback logo from the channel name at runtime — a coloured circular tile with the station name centred on it. The colour is deterministic per `id` so a given station always looks the same.
 
 There is **no cap** on channels per band — 4 channels or 40, the needle fills the full sweep either way. Bands with no channels are silent. Physical rotary positions whose hardware nibble doesn't match any declared band are also silent.
 

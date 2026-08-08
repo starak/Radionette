@@ -99,6 +99,19 @@ export function resolveLogoPath(ref: string | undefined | null): string | null {
  * paintable.
  */
 export async function loadLogo(ref: string | undefined | null): Promise<RenderedLogo> {
+  if (typeof ref === "string" && /^text:/i.test(ref)) {
+    const cached = cache.get(ref);
+    if (cached) return cached;
+    try {
+      const logo = renderTextLogo(ref);
+      cache.set(ref, logo);
+      return logo;
+    } catch (err) {
+      console.error(`[Logos] Failed to render text logo ${ref}:`, err);
+      // Fall through to default fallback below
+    }
+  }
+
   if (typeof ref === "string" && /^https?:\/\//i.test(ref)) {
     const cached = cache.get(ref);
     if (cached) return cached;
@@ -239,6 +252,171 @@ async function renderRemote(url: string): Promise<RenderedLogo> {
     frames: [{ rgb565: rgba8888ToRgb565(rgba), delayMs: Infinity }],
     animated: false,
   };
+}
+
+/**
+ * Render a text-only logo from a `text:<id>|<display name>` reference.
+ * Used as a graceful fallback for channels that don't have (or have
+ * not yet been given) a proper logo file: rather than showing a
+ * generic `default.png` for every unbranded station, we synthesise a
+ * coloured tile with the channel name centred on it. Colour is
+ * deterministic per id so a given station always looks the same.
+ *
+ * Reference format:
+ *   text:<stable id>|<display name>
+ *   text:<display name>              // id defaults to the name
+ */
+function renderTextLogo(ref: string): RenderedLogo {
+  const rest = ref.slice("text:".length);
+  const pipe = rest.indexOf("|");
+  const id = pipe >= 0 ? rest.slice(0, pipe) : rest;
+  const displayName = pipe >= 0 ? rest.slice(pipe + 1) : rest;
+  const key = id || displayName || "?";
+  const label = (displayName || key).trim() || "?";
+
+  const { createCanvas } = canvas();
+  const c = createCanvas(WIDTH, HEIGHT);
+  // The node-canvas type stubs don't cover text/gradient/shadow APIs
+  // that exist at runtime; cast so we can use them without
+  // rewriting the whole file.
+  const ctx = c.getContext("2d") as any;
+
+  // Deterministic hue from the id — DJB2-ish hash so tweaks to a name
+  // don't shift every colour.
+  let hash = 5381;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) + hash + key.charCodeAt(i)) >>> 0;
+  }
+  const hue = hash % 360;
+
+  // Radial gradient background: slightly brighter centre, darker edge.
+  const bgCentre = `hsl(${hue}, 55%, 32%)`;
+  const bgEdge = `hsl(${hue}, 70%, 14%)`;
+  const grad = ctx.createRadialGradient(
+    WIDTH / 2,
+    HEIGHT / 2,
+    WIDTH * 0.1,
+    WIDTH / 2,
+    HEIGHT / 2,
+    WIDTH * 0.55,
+  );
+  grad.addColorStop(0, bgCentre);
+  grad.addColorStop(1, bgEdge);
+
+  // Fill the whole 240x240 first (corners will be black once we mask).
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(WIDTH / 2, HEIGHT / 2, WIDTH / 2, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  // Break the label into up to 3 lines that fit inside a square
+  // inscribed in the circle (edge-to-edge = WIDTH * cos(45°) ≈ 170 px
+  // usable width, but we leave more margin to avoid crowding the rim).
+  const maxWidth = 176;
+  const lines = layoutLabel(ctx, label, maxWidth);
+
+  // Auto-size the font so the widest line fits in maxWidth AND the
+  // stack of lines fits in the vertical usable area.
+  const maxHeight = 180;
+  const fontSize = fitFontSize(ctx, lines, maxWidth, maxHeight);
+  ctx.font = `700 ${fontSize}px "Helvetica","Arial",sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  const lineHeight = Math.round(fontSize * 1.15);
+  const totalHeight = lineHeight * lines.length;
+  const startY = HEIGHT / 2 - totalHeight / 2 + lineHeight / 2;
+
+  // Subtle drop shadow to help the text pop off the coloured background.
+  ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetY = 2;
+
+  ctx.fillStyle = "#ffffff";
+  lines.forEach((line: string, idx: number) => {
+    ctx.fillText(line, WIDTH / 2, startY + idx * lineHeight);
+  });
+
+  ctx.restore();
+
+  const rgba = ctx.getImageData(0, 0, WIDTH, HEIGHT).data;
+  return {
+    source: ref,
+    frames: [{ rgb565: rgba8888ToRgb565(rgba), delayMs: Infinity }],
+    animated: false,
+  };
+}
+
+/**
+ * Greedy word-wrap into at most 3 lines. Uses a nominal font size to
+ * measure; the auto-sizer below scales the actual font down to fit.
+ */
+function layoutLabel(
+  ctx: any,
+  label: string,
+  maxWidth: number,
+): string[] {
+  ctx.font = `700 48px "Helvetica","Arial",sans-serif`;
+  const words = label.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [label];
+  if (words.length === 1) return [words[0]];
+
+  const lines: string[] = [];
+  let current = words[0];
+  for (let i = 1; i < words.length; i++) {
+    const attempt = `${current} ${words[i]}`;
+    if (ctx.measureText(attempt).width <= maxWidth || lines.length === 2) {
+      current = attempt;
+    } else {
+      lines.push(current);
+      current = words[i];
+    }
+    if (lines.length === 2) {
+      // Everything left goes on the third line
+      current = [current, ...words.slice(i + 1)].join(" ");
+      break;
+    }
+  }
+  lines.push(current);
+  return lines.slice(0, 3);
+}
+
+/**
+ * Auto-size the font so both width and height constraints hold.
+ * Binary search between a small and generous max size.
+ */
+function fitFontSize(
+  ctx: any,
+  lines: string[],
+  maxWidth: number,
+  maxHeight: number,
+): number {
+  let lo = 18;
+  let hi = 96;
+  let best = lo;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    ctx.font = `700 ${mid}px "Helvetica","Arial",sans-serif`;
+    const widest = lines.reduce(
+      (acc: number, line: string) => Math.max(acc, ctx.measureText(line).width),
+      0,
+    );
+    const totalHeight = Math.round(mid * 1.15) * lines.length;
+    if (widest <= maxWidth && totalHeight <= maxHeight) {
+      best = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return best;
 }
 
 async function renderGif(absPath: string): Promise<RenderedLogo> {
