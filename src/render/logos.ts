@@ -103,7 +103,7 @@ export async function loadLogo(ref: string | undefined | null): Promise<Rendered
     const cached = cache.get(ref);
     if (cached) return cached;
     try {
-      const logo = renderTextLogo(ref);
+      const logo = await renderTextLogo(ref);
       cache.set(ref, logo);
       return logo;
     } catch (err) {
@@ -265,21 +265,22 @@ async function renderRemote(url: string): Promise<RenderedLogo> {
  * Reference format:
  *   text:<stable id>|<display name>
  *   text:<display name>              // id defaults to the name
+ *
+ * Rendered via an SVG data URI + loadImage() rather than direct
+ * fillRect/fillText calls on the 2D context. On Pi OS Trixie (Debian
+ * 13) the shipped Cairo 1.18 is incompatible with the prebuilt
+ * node-canvas 2.11.2 in a way that leaves fillRect/fillText silently
+ * no-op — the target canvas stays black even though the drawing
+ * commands succeed. SVG rasterisation goes through a different code
+ * path in node-canvas and works fine, so we lean on that instead.
  */
-function renderTextLogo(ref: string): RenderedLogo {
+async function renderTextLogo(ref: string): Promise<RenderedLogo> {
   const rest = ref.slice("text:".length);
   const pipe = rest.indexOf("|");
   const id = pipe >= 0 ? rest.slice(0, pipe) : rest;
   const displayName = pipe >= 0 ? rest.slice(pipe + 1) : rest;
   const key = id || displayName || "?";
   const label = (displayName || key).trim() || "?";
-
-  const { createCanvas } = canvas();
-  const c = createCanvas(WIDTH, HEIGHT);
-  // The node-canvas type stubs don't cover text/gradient/shadow APIs
-  // that exist at runtime; cast so we can use them without
-  // rewriting the whole file.
-  const ctx = c.getContext("2d") as any;
 
   // Deterministic hue from the id — DJB2-ish hash so tweaks to a name
   // don't shift every colour.
@@ -289,64 +290,45 @@ function renderTextLogo(ref: string): RenderedLogo {
   }
   const hue = hash % 360;
 
-  // Radial gradient background: brighter centre, still-vibrant edge so
-  // the tile stays perceptible when the backlight has auto-dimmed.
-  const bgCentre = `hsl(${hue}, 75%, 48%)`;
-  const bgEdge = `hsl(${hue}, 80%, 22%)`;
-  const grad = ctx.createRadialGradient(
-    WIDTH / 2,
-    HEIGHT / 2,
-    WIDTH * 0.1,
-    WIDTH / 2,
-    HEIGHT / 2,
-    WIDTH * 0.55,
-  );
-  grad.addColorStop(0, bgCentre);
-  grad.addColorStop(1, bgEdge);
-
-  // Fill the whole 240x240 first (corners will be black once we mask).
-  ctx.fillStyle = "#000000";
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(WIDTH / 2, HEIGHT / 2, WIDTH / 2, 0, Math.PI * 2);
-  ctx.closePath();
-  ctx.clip();
-
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
-
-  // Break the label into up to 3 lines that fit inside a square
-  // inscribed in the circle (edge-to-edge = WIDTH * cos(45°) ≈ 170 px
-  // usable width, but we leave more margin to avoid crowding the rim).
-  const maxWidth = 176;
-  const lines = layoutLabel(ctx, label, maxWidth);
-
-  // Auto-size the font so the widest line fits in maxWidth AND the
-  // stack of lines fits in the vertical usable area.
-  const maxHeight = 180;
-  const fontSize = fitFontSize(ctx, lines, maxWidth, maxHeight);
-  ctx.font = `700 ${fontSize}px "Helvetica","Arial",sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-
+  // Word-wrap the label into up to 3 lines using rough character-width
+  // heuristics (we don't have measureText available here — SVG will
+  // shrink lines that are still too wide via textLength).
+  const lines = wrapText(label, 14);
+  const fontSize = chooseFontSize(lines);
   const lineHeight = Math.round(fontSize * 1.15);
-  const totalHeight = lineHeight * lines.length;
-  const startY = HEIGHT / 2 - totalHeight / 2 + lineHeight / 2;
+  const totalTextHeight = lineHeight * lines.length;
+  const firstBaselineY = HEIGHT / 2 - totalTextHeight / 2 + lineHeight / 2;
 
-  // Subtle drop shadow to help the text pop off the coloured background.
-  ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
-  ctx.shadowBlur = 6;
-  ctx.shadowOffsetY = 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="55%" fx="50%" fy="45%">
+      <stop offset="0%" stop-color="hsl(${hue}, 75%, 48%)"/>
+      <stop offset="100%" stop-color="hsl(${hue}, 80%, 22%)"/>
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+      <feOffset dx="0" dy="2"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.55"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="${WIDTH}" height="${HEIGHT}" fill="#000000"/>
+  <circle cx="${WIDTH / 2}" cy="${HEIGHT / 2}" r="${WIDTH / 2}" fill="url(#bg)"/>
+  <g font-family="Helvetica, Arial, sans-serif" font-weight="700" font-size="${fontSize}" fill="#ffffff" text-anchor="middle" filter="url(#shadow)">
+${lines
+  .map(
+    (line, i) =>
+      `    <text x="${WIDTH / 2}" y="${firstBaselineY + i * lineHeight}" dominant-baseline="middle" textLength="176" lengthAdjust="spacingAndGlyphs">${escapeXml(line)}</text>`,
+  )
+  .join("\n")}
+  </g>
+</svg>`;
 
-  ctx.fillStyle = "#ffffff";
-  lines.forEach((line: string, idx: number) => {
-    ctx.fillText(line, WIDTH / 2, startY + idx * lineHeight);
-  });
-
-  ctx.restore();
-
+  const { createCanvas, loadImage } = canvas();
+  const img = await loadImage(Buffer.from(svg));
+  const c = createCanvas(WIDTH, HEIGHT);
+  const ctx = c.getContext("2d") as any;
+  ctx.drawImage(img, 0, 0, WIDTH, HEIGHT);
   const rgba = ctx.getImageData(0, 0, WIDTH, HEIGHT).data;
   return {
     source: ref,
@@ -356,15 +338,12 @@ function renderTextLogo(ref: string): RenderedLogo {
 }
 
 /**
- * Greedy word-wrap into at most 3 lines. Uses a nominal font size to
- * measure; the auto-sizer below scales the actual font down to fit.
+ * Rough word-wrap into up to 3 lines by target character count per
+ * line. We can't measure text width without a functional 2D context so
+ * we approximate; the SVG then uses textLength to squeeze any line that
+ * still overflows.
  */
-function layoutLabel(
-  ctx: any,
-  label: string,
-  maxWidth: number,
-): string[] {
-  ctx.font = `700 48px "Helvetica","Arial",sans-serif`;
+function wrapText(label: string, targetCharsPerLine: number): string[] {
   const words = label.split(/\s+/).filter(Boolean);
   if (words.length === 0) return [label];
   if (words.length === 1) return [words[0]];
@@ -373,14 +352,13 @@ function layoutLabel(
   let current = words[0];
   for (let i = 1; i < words.length; i++) {
     const attempt = `${current} ${words[i]}`;
-    if (ctx.measureText(attempt).width <= maxWidth || lines.length === 2) {
+    if (attempt.length <= targetCharsPerLine || lines.length === 2) {
       current = attempt;
     } else {
       lines.push(current);
       current = words[i];
     }
     if (lines.length === 2) {
-      // Everything left goes on the third line
       current = [current, ...words.slice(i + 1)].join(" ");
       break;
     }
@@ -390,34 +368,23 @@ function layoutLabel(
 }
 
 /**
- * Auto-size the font so both width and height constraints hold.
- * Binary search between a small and generous max size.
+ * Pick a font size based on how many lines we're rendering. SVG's
+ * textLength will squeeze any line that's still too wide horizontally,
+ * so we mainly need to worry about vertical fit.
  */
-function fitFontSize(
-  ctx: any,
-  lines: string[],
-  maxWidth: number,
-  maxHeight: number,
-): number {
-  let lo = 18;
-  let hi = 96;
-  let best = lo;
-  while (lo <= hi) {
-    const mid = Math.floor((lo + hi) / 2);
-    ctx.font = `700 ${mid}px "Helvetica","Arial",sans-serif`;
-    const widest = lines.reduce(
-      (acc: number, line: string) => Math.max(acc, ctx.measureText(line).width),
-      0,
-    );
-    const totalHeight = Math.round(mid * 1.15) * lines.length;
-    if (widest <= maxWidth && totalHeight <= maxHeight) {
-      best = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  return best;
+function chooseFontSize(lines: string[]): number {
+  if (lines.length >= 3) return 42;
+  if (lines.length === 2) return 56;
+  return 68;
+}
+
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 async function renderGif(absPath: string): Promise<RenderedLogo> {
