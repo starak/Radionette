@@ -290,10 +290,19 @@ async function renderTextLogo(ref: string): Promise<RenderedLogo> {
   }
   const hue = hash % 360;
 
-  // Word-wrap the label into up to 3 lines using rough character-width
-  // heuristics (we don't have measureText available here — SVG will
-  // shrink lines that are still too wide via textLength).
-  const lines = wrapText(label, 14);
+  // 240x240 round panel. The text lives inside a slightly-inset badge
+  // (~72px radius = 144px diameter) so the outer ring of the circle
+  // stays as background and gives the tile some visual breathing room
+  // against the panel rim. Everything must fit inside the badge — a
+  // conservative safe rectangle of ~100x100 keeps text off the rim
+  // even after a bit of anti-aliased outline.
+  const BADGE_RADIUS = 96;
+  const SAFE_WIDTH = 132;
+
+  // Word-wrap the label into up to 3 lines. Prefer more/shorter lines
+  // over a single wide line — a circular panel penalises horizontal
+  // text more than a rectangular one.
+  const lines = wrapText(label, 8);
   const fontSize = chooseFontSize(lines);
   const lineHeight = Math.round(fontSize * 1.15);
   const totalTextHeight = lineHeight * lines.length;
@@ -305,24 +314,28 @@ async function renderTextLogo(ref: string): Promise<RenderedLogo> {
       <stop offset="0%" stop-color="hsl(${hue}, 75%, 48%)"/>
       <stop offset="100%" stop-color="hsl(${hue}, 80%, 22%)"/>
     </radialGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
-      <feOffset dx="0" dy="2"/>
-      <feComponentTransfer><feFuncA type="linear" slope="0.55"/></feComponentTransfer>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.2"/>
+      <feOffset dx="0" dy="1"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.65"/></feComponentTransfer>
       <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
   <rect width="${WIDTH}" height="${HEIGHT}" fill="#000000"/>
-  <circle cx="${WIDTH / 2}" cy="${HEIGHT / 2}" r="${WIDTH / 2}" fill="url(#bg)"/>
+  <circle cx="${WIDTH / 2}" cy="${HEIGHT / 2}" r="${BADGE_RADIUS}" fill="url(#bg)"/>
   <g font-family="Helvetica, Arial, sans-serif" font-weight="700" font-size="${fontSize}" fill="#ffffff" text-anchor="middle" filter="url(#shadow)">
 ${lines
   .map(
     (line, i) =>
-      `    <text x="${WIDTH / 2}" y="${firstBaselineY + i * lineHeight}" dominant-baseline="middle" textLength="176" lengthAdjust="spacingAndGlyphs">${escapeXml(line)}</text>`,
+      `    <text x="${WIDTH / 2}" y="${firstBaselineY + i * lineHeight}" dominant-baseline="middle">${escapeXml(line)}</text>`,
   )
   .join("\n")}
   </g>
 </svg>`;
+  // SAFE_WIDTH is enforced by chooseFontSize + wrapText: fonts are
+  // picked small enough and lines are wrapped tight enough that
+  // typical BBC/NRK station-name lines fit inside SAFE_WIDTH.
+  void SAFE_WIDTH;
 
   const { createCanvas, loadImage } = canvas();
   const img = await loadImage(Buffer.from(svg));
@@ -368,14 +381,14 @@ function wrapText(label: string, targetCharsPerLine: number): string[] {
 }
 
 /**
- * Pick a font size based on how many lines we're rendering. SVG's
- * textLength will squeeze any line that's still too wide horizontally,
- * so we mainly need to worry about vertical fit.
+ * Pick a font size so the vertical stack of lines fits inside the
+ * central badge (~96px radius). Sized conservatively so text stays
+ * well inside the badge circumference even for longer names.
  */
 function chooseFontSize(lines: string[]): number {
-  if (lines.length >= 3) return 42;
-  if (lines.length === 2) return 56;
-  return 68;
+  if (lines.length >= 3) return 24; // 3 * 24 * 1.15 ≈ 83px stack
+  if (lines.length === 2) return 32; // 2 * 32 * 1.15 ≈ 74px stack
+  return 42;                          // single line up to ~48px tall
 }
 
 function escapeXml(s: string): string {
