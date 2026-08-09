@@ -217,9 +217,13 @@ export function startGpio(): void {
   // fallbackLastChannelId still remembers the previous pick, so on
   // power-on we would think "same channel, no change" and skip
   // setChannel(), leaving the player silent. Reset on power-off.
-  radioState.on("power:off", () => {
+  // Same for mode:bluetooth — state.channel is cleared on BT enter,
+  // so we would otherwise strand ourselves on return to radio.
+  const resetFallback = (): void => {
     fallbackLastChannelId = null;
-  });
+  };
+  radioState.on("power:off", resetFallback);
+  radioState.on("mode:bluetooth", resetFallback);
 }
 
 /**

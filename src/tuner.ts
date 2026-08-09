@@ -530,10 +530,14 @@ export function initTuner(): void {
   // we didn't clear it, then on power-on the next poll would see the
   // same wedge as "already committed" and skip setChannel(), leaving
   // the player silent until the user physically moved the needle.
-  radioState.on("power:off", () => {
+  // Same story for mode:bluetooth — state.channel is cleared to null
+  // on BT enter, so returning to radio would otherwise strand us.
+  const resetCommit = (): void => {
     lastAppliedChannelId = null;
     lastCommittedFraction = null;
-  });
+  };
+  radioState.on("power:off", resetCommit);
+  radioState.on("mode:bluetooth", resetCommit);
 }
 
 export function stopTuner(): void {
