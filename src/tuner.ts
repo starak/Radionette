@@ -31,6 +31,7 @@ import * as path from "path";
 import { isAdcReady, i2cProbe, i2cReadReg } from "./adc";
 import { channelsForBand } from "./channels";
 import { radioState, ChannelInfo } from "./state";
+import { playTunerStatic } from "./static-noise";
 
 // ── AS5600 register map ────────────────────────────────────────────────
 
@@ -370,6 +371,7 @@ function pollTuner(): void {
         )} → ${pick.id} (${pick.name})`
       );
     }
+    playTunerStatic(pick.id);
     lastAppliedChannelId = pick.id;
     radioState.setChannel(pick);
   }

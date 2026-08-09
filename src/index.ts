@@ -12,6 +12,7 @@ import { initAdc, stopAdc } from "./adc";
 import { initVolume, stopVolume } from "./volume";
 import { initTuner, stopTuner } from "./tuner";
 import { initArtwork, stopArtwork } from "./artwork";
+import { initStaticNoise, stopStaticNoise } from "./static-noise";
 import {
   initDisplayService,
   stopDisplayService,
@@ -45,6 +46,11 @@ initHotspotAlert();
 
 // 5. Initialize audio (mono/stereo switching via PulseAudio)
 initAudio();
+
+// 5b. Initialize the tuner-static burst (paplay to the radionette sink).
+//     Must come BEFORE initTuner() / startGpio() so their first channel
+//     transitions can trigger it.
+initStaticNoise();
 
 // 6. Start web server (subscribes to state events)
 startWebServer();
@@ -103,6 +109,7 @@ async function shutdown(): Promise<void> {
   }
   stopVolume();
   stopArtwork();
+  stopStaticNoise();
   stopTuner();
   stopAdc();
   // Stop backlight before gpio.ts closes the pin.

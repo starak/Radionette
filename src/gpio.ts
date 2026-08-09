@@ -1,6 +1,7 @@
 import { radioState } from "./state";
 import { bandForHardware, channelsForBand } from "./channels";
 import { setTunerBand, isTunerActive } from "./tuner";
+import { playTunerStatic } from "./static-noise";
 
 // rpio is a native module that only works on the Pi.
 // We require() it so the app can still be built on other machines
@@ -39,6 +40,11 @@ let stableRawValue = -1;
 // poll loop from immediately reverting to the physical pin reading.
 // We store the physical value to ignore until the dial actually moves.
 let ignorePhysicalValue: number | null = null;
+
+// Tracks the channel id the fallback path last pushed via
+// radioState.setChannel(). Used to fire a static burst exactly once
+// per real change on the fallback path (tuner path tracks its own).
+let fallbackLastChannelId: string | null = null;
 
 function readPins(): number {
   if (!rpio) return 0;
@@ -102,7 +108,13 @@ function processValue(rawValue: number): void {
   // channel in the current band by `order`, or silence if the band is
   // unmapped or empty.
   const channels = channelsForBand(bandOrdinal);
-  radioState.setChannel(channels[0] ?? null);
+  const pick = channels[0] ?? null;
+  const pickId = pick?.id ?? null;
+  if (pickId !== fallbackLastChannelId) {
+    playTunerStatic(pickId);
+    fallbackLastChannelId = pickId;
+  }
+  radioState.setChannel(pick);
 }
 
 function updateOutputs(power: boolean, bluetooth: boolean): void {
