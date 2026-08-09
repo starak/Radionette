@@ -1006,8 +1006,8 @@
 
       statusEl.textContent = t.ready ? 'ready' : 'not available';
       rawEl.textContent = t.latestRaw != null ? String(t.latestRaw) : '—';
-      minEl.textContent = t.calibration ? String(t.calibration.minRaw) : '—';
-      maxEl.textContent = t.calibration ? String(t.calibration.maxRaw) : '—';
+      minEl.textContent = t.calibration ? String(t.calibration.minAngle) : '—';
+      maxEl.textContent = t.calibration ? String(t.calibration.maxAngle) : '—';
       bandEl.textContent = '0x' + (t.band || 0).toString(16);
       fracEl.textContent = t.fraction != null ? (+t.fraction).toFixed(3) : '—';
 

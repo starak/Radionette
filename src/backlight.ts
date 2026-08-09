@@ -113,6 +113,7 @@ function onPowerOff(): void {
 }
 
 function onChannelChange(): void {
+  if (!radioState.state.power) return;
   if (brightLocked) return;
   wake();
 }
@@ -123,6 +124,7 @@ function onChannelChange(): void {
  * change would.
  */
 function onArtworkChange(): void {
+  if (!radioState.state.power) return;
   if (brightLocked) return;
   wake();
 }

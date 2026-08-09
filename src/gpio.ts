@@ -106,15 +106,17 @@ function processValue(rawValue: number): void {
 
   // Fallback (no AS5600 / not calibrated / dev mode): pick the first
   // channel in the current band by `order`, or silence if the band is
-  // unmapped or empty.
+  // unmapped or empty. Only commit when mode is actually radio —
+  // otherwise setChannel() is a no-op and updating our local tracker
+  // would strand us thinking we'd committed when we hadn't.
   const channels = channelsForBand(bandOrdinal);
   const pick = channels[0] ?? null;
   const pickId = pick?.id ?? null;
-  if (pickId !== fallbackLastChannelId) {
+  if (radioState.state.mode === "radio" && pickId !== fallbackLastChannelId) {
     playTunerStatic(pickId);
     fallbackLastChannelId = pickId;
+    radioState.setChannel(pick);
   }
-  radioState.setChannel(pick);
 }
 
 function updateOutputs(power: boolean, bluetooth: boolean): void {
@@ -210,6 +212,14 @@ export function startGpio(): void {
 
   console.log("[GPIO] Starting poll loop...");
   pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+
+  // On power-off state.ts clears state.channel to null. Our local
+  // fallbackLastChannelId still remembers the previous pick, so on
+  // power-on we would think "same channel, no change" and skip
+  // setChannel(), leaving the player silent. Reset on power-off.
+  radioState.on("power:off", () => {
+    fallbackLastChannelId = null;
+  });
 }
 
 /**

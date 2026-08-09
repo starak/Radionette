@@ -1,16 +1,17 @@
 /**
  * Tuner static burst.
  *
- * Plays a short (~600 ms) white-noise burst through the PulseAudio
- * `radionette` sink whenever the tuner (or the rotary-band fallback in
+ * Plays a short (~600 ms) white-noise burst through the current default
+ * PulseAudio sink whenever the tuner (or the rotary-band fallback in
  * gpio.ts) switches to a different channel. The intent is to mimic the
  * inter-station hiss of an analog radio: mostly a UX flourish, but it
  * also usefully bridges the ~0.3-1 s gap while ffmpeg/mpg123 respawns
  * and buffers the next stream.
  *
- * The burst is fired via `paplay --device=radionette` so it mixes with
- * whatever the player process is currently outputting and rides the
- * same physical volume knob (via the `radionette` sink).
+ * The burst is fired via `paplay` (no --device) so it lands on the same
+ * default sink that audio.ts routes the stream player to. That means
+ * mono/stereo re-routing done by audio.ts is honoured, and the burst
+ * rides the same physical volume knob.
  *
  * Overlap policy: if a burst is already in flight when a new trigger
  * arrives, the in-flight one is SIGKILLed and a new one is spawned.
@@ -31,7 +32,6 @@ import * as path from "path";
 import { radioState } from "./state";
 
 const PAPLAY = "/usr/bin/paplay";
-const SINK = "radionette";
 const ASSETS_DIR = path.resolve(__dirname, "..", "assets");
 const WAV_FILE = path.join(ASSETS_DIR, "tuner-static.wav");
 
@@ -57,7 +57,7 @@ export function initStaticNoise(): void {
     return;
   }
   ready = true;
-  console.log(`[StaticNoise] Ready (sink=${SINK}, wav=${WAV_FILE})`);
+  console.log(`[StaticNoise] Ready (wav=${WAV_FILE})`);
 }
 
 /**
@@ -97,7 +97,7 @@ export function playTunerStatic(channelId: string | null): void {
 
   const proc = execFile(
     PAPLAY,
-    ["--device", SINK, WAV_FILE],
+    [WAV_FILE],
     (err) => {
       if (proc === currentProc) currentProc = null;
       if (err && (err as NodeJS.ErrnoException).code !== "SIGKILL" && err.signal !== "SIGKILL") {

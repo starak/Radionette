@@ -364,16 +364,28 @@ function pollTuner(): void {
   }
 
   if (pick.id !== lastAppliedChannelId) {
-    if (radioState.state.mode === "radio" && radioState.state.power) {
+    // Don't commit while the radio isn't actually listening — setChannel
+    // is a no-op when mode !== "radio" (or power off), and if we
+    // updated lastAppliedChannelId anyway the tuner would think it had
+    // already committed and never re-fire when the radio comes back on
+    // sitting on the same wedge.
+    if (radioState.state.power && radioState.state.mode === "radio") {
       console.log(
         `[Tuner] band=${currentBand} fraction=${fraction.toFixed(
           3
         )} → ${pick.id} (${pick.name})`
       );
+      playTunerStatic(pick.id);
+      lastAppliedChannelId = pick.id;
+      lastCommittedFraction = fraction;
+      radioState.setChannel(pick);
     }
-    playTunerStatic(pick.id);
-    lastAppliedChannelId = pick.id;
-    radioState.setChannel(pick);
+    // Deliberately do NOT update lastCommittedFraction when we didn't
+    // commit — otherwise the next poll's hysteresis check against the
+    // just-updated fraction would swallow us forever until the needle
+    // physically moved by more than FRACTION_HYSTERESIS. That was the
+    // "won't play after power-on" bug.
+    return;
   }
   lastCommittedFraction = fraction;
 }
@@ -512,6 +524,16 @@ export function initTuner(): void {
   console.log(
     `[Tuner] Polling AS5600 every ${TUNER_POLL_MS}ms, smoothing window=${SMOOTH_WINDOW}`
   );
+
+  // On power-off state.ts clears state.channel to null, but our
+  // local lastAppliedChannelId still points at the previous pick. If
+  // we didn't clear it, then on power-on the next poll would see the
+  // same wedge as "already committed" and skip setChannel(), leaving
+  // the player silent until the user physically moved the needle.
+  radioState.on("power:off", () => {
+    lastAppliedChannelId = null;
+    lastCommittedFraction = null;
+  });
 }
 
 export function stopTuner(): void {
