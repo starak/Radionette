@@ -97,6 +97,7 @@ class RadioStateEmitter extends EventEmitter {
       this._state.channel = null;
       this._state.playing = false;
       this._state.metadata = null;
+      this._state.nowPlayingArtwork = null;
       this.emit("power:off");
     }
     this.emitStateChange();

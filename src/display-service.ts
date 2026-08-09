@@ -39,8 +39,28 @@ export interface DisplayServiceOptions {
 
 const SPLASH_MS = 5000;
 
+// After a channel change (including the first channel picked after
+// power-on), let the channel logo linger for at least this long before
+// album art is allowed to take over. Otherwise fast-arriving ICY
+// metadata + a cache hit in artwork.ts can replace the channel logo
+// within a fraction of a second, so the user never actually sees the
+// channel identity — just the song art.
+const CHANNEL_LOGO_LINGER_MS = 5000;
+
 let opts: Required<DisplayServiceOptions> | null = null;
 let splashTimer: NodeJS.Timeout | null = null;
+
+// Timestamp of the most recent channel change. Used to gate album art
+// during the linger window. Reset whenever the channel id changes.
+let channelChangedAt = 0;
+let lingerTimer: NodeJS.Timeout | null = null;
+
+function clearLingerTimer(): void {
+  if (lingerTimer) {
+    clearTimeout(lingerTimer);
+    lingerTimer = null;
+  }
+}
 
 function pickLogoForState(s: RadioState): string | null {
   if (!s.power) return null; // signal: black
@@ -55,8 +75,13 @@ function pickLogoForState(s: RadioState): string | null {
   }
   if (s.mode === "radio") {
     // Prefer live album art when we have it — falls back to the channel
-    // logo when there's no match or no metadata parsed.
-    if (s.nowPlayingArtwork?.url) return s.nowPlayingArtwork.url;
+    // logo when there's no match or no metadata parsed. Suppressed
+    // during the CHANNEL_LOGO_LINGER_MS window immediately after a
+    // channel change so the user actually gets to see the station
+    // identity before the current song's art takes over.
+    const sinceChannel = Date.now() - channelChangedAt;
+    const artAllowed = sinceChannel >= CHANNEL_LOGO_LINGER_MS;
+    if (artAllowed && s.nowPlayingArtwork?.url) return s.nowPlayingArtwork.url;
     if (s.channel) {
       // If the channel has a real logo file, use it. Otherwise generate a
       // text tile from the channel name so we never fall through to the
@@ -120,6 +145,8 @@ function applyState(s: RadioState): void {
 
 function handlePowerOn(): void {
   clearSplash();
+  clearLingerTimer();
+  channelChangedAt = 0;
   const splashLogo = opts!.defaultLogo;
   splashActive = true;
   lastApplied = splashLogo;
@@ -128,11 +155,41 @@ function handlePowerOn(): void {
     if (splashTimer !== myTimer) return; // superseded
     splashTimer = null;
     splashActive = false;
+    // Restart the channel-logo linger window from the moment the splash
+    // ends. Otherwise a channel that was picked during the splash (which
+    // is almost always the case — tuner commits within ~250 ms of
+    // power-on) already has ~5 s of linger "credit" at splash end, and
+    // album art immediately wins the repaint.
+    channelChangedAt = Date.now();
+    clearLingerTimer();
+    lingerTimer = setTimeout(() => {
+      lingerTimer = null;
+      lastApplied = undefined;
+      applyState(radioState.state);
+    }, CHANNEL_LOGO_LINGER_MS + 50);
     // Force re-evaluation by clearing lastApplied so applyState always paints.
     lastApplied = undefined;
     applyState(radioState.state);
   }, SPLASH_MS);
   splashTimer = myTimer;
+}
+
+let lastChannelIdSeen: string | null = null;
+
+function handleChannelChange(): void {
+  const id = radioState.state.channel?.id ?? null;
+  if (id === lastChannelIdSeen) return;
+  lastChannelIdSeen = id;
+  channelChangedAt = Date.now();
+  clearLingerTimer();
+  // Schedule a repaint at the moment the linger window ends so album
+  // art (if we have any by then) takes over automatically without
+  // waiting for the next unrelated state:change event.
+  lingerTimer = setTimeout(() => {
+    lingerTimer = null;
+    lastApplied = undefined;
+    applyState(radioState.state);
+  }, CHANNEL_LOGO_LINGER_MS + 50);
 }
 
 export async function initDisplayService(
@@ -164,6 +221,7 @@ export async function initDisplayService(
 
   radioState.on("state:change", applyState);
   radioState.on("power:on", handlePowerOn);
+  radioState.on("channel:change", handleChannelChange);
 
   // Apply current state immediately (covers boot-up where the radio may
   // already be powered with a channel selected before this service started).
@@ -172,9 +230,11 @@ export async function initDisplayService(
 
 export async function stopDisplayService(): Promise<void> {
   clearSplash();
+  clearLingerTimer();
   splashActive = false;
   radioState.off("state:change", applyState);
   radioState.off("power:on", handlePowerOn);
+  radioState.off("channel:change", handleChannelChange);
   await displayController.shutdown();
   opts = null;
   lastApplied = undefined;

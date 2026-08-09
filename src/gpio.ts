@@ -1,6 +1,7 @@
 import { radioState } from "./state";
 import { bandForHardware, channelsForBand } from "./channels";
 import { setTunerBand, isTunerActive } from "./tuner";
+import { playTunerStatic } from "./static-noise";
 
 // rpio is a native module that only works on the Pi.
 // We require() it so the app can still be built on other machines
@@ -39,6 +40,11 @@ let stableRawValue = -1;
 // poll loop from immediately reverting to the physical pin reading.
 // We store the physical value to ignore until the dial actually moves.
 let ignorePhysicalValue: number | null = null;
+
+// Tracks the channel id the fallback path last pushed via
+// radioState.setChannel(). Used to fire a static burst exactly once
+// per real change on the fallback path (tuner path tracks its own).
+let fallbackLastChannelId: string | null = null;
 
 function readPins(): number {
   if (!rpio) return 0;
@@ -100,9 +106,17 @@ function processValue(rawValue: number): void {
 
   // Fallback (no AS5600 / not calibrated / dev mode): pick the first
   // channel in the current band by `order`, or silence if the band is
-  // unmapped or empty.
+  // unmapped or empty. Only commit when mode is actually radio —
+  // otherwise setChannel() is a no-op and updating our local tracker
+  // would strand us thinking we'd committed when we hadn't.
   const channels = channelsForBand(bandOrdinal);
-  radioState.setChannel(channels[0] ?? null);
+  const pick = channels[0] ?? null;
+  const pickId = pick?.id ?? null;
+  if (radioState.state.mode === "radio" && pickId !== fallbackLastChannelId) {
+    playTunerStatic(pickId);
+    fallbackLastChannelId = pickId;
+    radioState.setChannel(pick);
+  }
 }
 
 function updateOutputs(power: boolean, bluetooth: boolean): void {
@@ -198,6 +212,14 @@ export function startGpio(): void {
 
   console.log("[GPIO] Starting poll loop...");
   pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+
+  // On power-off state.ts clears state.channel to null. Our local
+  // fallbackLastChannelId still remembers the previous pick, so on
+  // power-on we would think "same channel, no change" and skip
+  // setChannel(), leaving the player silent. Reset on power-off.
+  radioState.on("power:off", () => {
+    fallbackLastChannelId = null;
+  });
 }
 
 /**
