@@ -6,6 +6,8 @@
   "scripts": {
     "build": "tsc",
     "deploy": "./deploy.sh",
+    "deploy:install": "./deploy.sh --install",
+    "deploy:refresh": "./deploy.sh --refresh",
     "dev": "tsc --watch",
     "gpio-logger": "node dist/gpio-logger.js",
     "smoke-display": "node dist/scripts/display-smoke.js",

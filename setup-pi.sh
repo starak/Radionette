@@ -112,6 +112,24 @@ if [ -n "${BOOT_CONFIG}" ]; then
   done
 fi
 
+# ---------- 2b. Ensure i2c-dev module is loaded ----------
+
+info "Ensuring i2c-dev kernel module is loaded at boot..."
+# dtparam=i2c_arm=on enables the controller but doesn't create /dev/i2c-1;
+# that requires the i2c-dev module, which isn't auto-loaded on Pi OS.
+if [ ! -f /etc/modules-load.d/i2c-dev.conf ]; then
+  echo i2c-dev | sudo tee /etc/modules-load.d/i2c-dev.conf > /dev/null
+  ok "Wrote /etc/modules-load.d/i2c-dev.conf"
+else
+  ok "/etc/modules-load.d/i2c-dev.conf already present"
+fi
+if ! lsmod | grep -q "^i2c_dev\b"; then
+  sudo modprobe i2c-dev
+  ok "Loaded i2c-dev module"
+else
+  ok "i2c-dev already loaded"
+fi
+
 # ---------- 3. Bluetooth device class ----------
 
 info "Configuring Bluetooth device class (speaker icon)..."

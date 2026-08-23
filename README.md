@@ -183,7 +183,10 @@ This installs nvm and Node.js LTS, then installs `mpg123`, `ffmpeg`, `bluez`, `r
 npm run deploy
 ```
 
-This builds the TypeScript, syncs everything to the Pi, installs production dependencies, starts the app via pm2, and saves the process list. The deploy script auto-detects the remote Node.js path.
+This builds the TypeScript, syncs everything to the Pi, starts the app via pm2, and saves the process list. The deploy script auto-detects the remote Node.js path. If `node_modules` is missing on the Pi it will run `npm install` automatically. Two variants force it explicitly:
+
+- `npm run deploy:install` — force `npm install` on the Pi over the existing tree
+- `npm run deploy:refresh` — wipe `node_modules` on the Pi and reinstall from scratch
 
 ### 5. Verify
 
