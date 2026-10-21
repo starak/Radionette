@@ -154,12 +154,24 @@ export function startWebServer(): void {
   // Resolve the HTML file path
   // In dist, public/ sits next to the JS files
   const publicDir = path.resolve(__dirname, "public");
+  const serveFrontend = (res: http.ServerResponse): void => {
+    fs.readFile(path.join(publicDir, "index.html"), "utf-8", (err, data) => {
+      if (err) { res.writeHead(500, { "Content-Type": "text/plain" }); res.end("Frontend is not built"); return; }
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
+      res.end(data);
+    });
+  };
 
   server = http.createServer(async (req, res) => {
-    if (req.url === "/app.css") {
-      fs.readFile(path.join(publicDir, "app.css"), (err, data) => {
+    if (req.url?.startsWith("/assets/")) {
+      const requested = decodeURIComponent(req.url.slice("/assets/".length));
+      const filename = path.basename(requested);
+      if (!filename || requested !== filename) { res.writeHead(400); res.end(); return; }
+      fs.readFile(path.join(publicDir, "assets", filename), (err, data) => {
         if (err) { res.writeHead(404); res.end(); return; }
-        res.writeHead(200, { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "no-cache" });
+        const ext = path.extname(filename);
+        const type = ext === ".css" ? "text/css; charset=utf-8" : ext === ".js" ? "text/javascript; charset=utf-8" : "application/octet-stream";
+        res.writeHead(200, { "Content-Type": type, "Cache-Control": "public, max-age=31536000, immutable" });
         res.end(data);
       });
       return;
@@ -181,16 +193,7 @@ export function startWebServer(): void {
     }
 
     if (req.url === "/" || req.url === "/index.html") {
-      const htmlPath = path.join(publicDir, "index.html");
-      fs.readFile(htmlPath, "utf-8", (err, data) => {
-        if (err) {
-          res.writeHead(500, { "Content-Type": "text/plain" });
-          res.end("Failed to load status page");
-          return;
-        }
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(data);
-      });
+      serveFrontend(res);
       return;
     }
 
@@ -207,16 +210,7 @@ export function startWebServer(): void {
     }
 
     if (req.url === "/debug" || req.url === "/debug.html") {
-      const htmlPath = path.join(publicDir, "debug.html");
-      fs.readFile(htmlPath, "utf-8", (err, data) => {
-        if (err) {
-          res.writeHead(500, { "Content-Type": "text/plain" });
-          res.end("Failed to load debug page");
-          return;
-        }
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(data);
-      });
+      serveFrontend(res);
       return;
     }
 
@@ -226,16 +220,7 @@ export function startWebServer(): void {
         res.end();
         return;
       }
-      const htmlPath = path.join(publicDir, "settings-login.html");
-      fs.readFile(htmlPath, "utf-8", (err, data) => {
-        if (err) {
-          res.writeHead(500, { "Content-Type": "text/plain" });
-          res.end("Failed to load settings login page");
-          return;
-        }
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(data);
-      });
+      serveFrontend(res);
       return;
     }
 
@@ -285,16 +270,7 @@ export function startWebServer(): void {
         res.end();
         return;
       }
-      const htmlPath = path.join(publicDir, "settings.html");
-      fs.readFile(htmlPath, "utf-8", (err, data) => {
-        if (err) {
-          res.writeHead(500, { "Content-Type": "text/plain" });
-          res.end("Failed to load settings page");
-          return;
-        }
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(data);
-      });
+      serveFrontend(res);
       return;
     }
 
@@ -415,16 +391,7 @@ export function startWebServer(): void {
     // --- WiFi routes ---
 
     if (req.url === "/wifi" || req.url === "/wifi.html") {
-      const htmlPath = path.join(publicDir, "wifi.html");
-      fs.readFile(htmlPath, "utf-8", (err, data) => {
-        if (err) {
-          res.writeHead(500, { "Content-Type": "text/plain" });
-          res.end("Failed to load WiFi settings page");
-          return;
-        }
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(data);
-      });
+      serveFrontend(res);
       return;
     }
 

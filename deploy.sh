@@ -38,11 +38,6 @@ rsync -avz \
   package-lock.json \
   "${REMOTE}:${REMOTE_DIR}/"
 
-# Copy the HTML file (not compiled by tsc)
-rsync -avz \
-  src/public/ \
-  "${REMOTE}:${REMOTE_DIR}/dist/public/"
-
 # Copy sound assets
 rsync -avz \
   assets/ \

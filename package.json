@@ -4,13 +4,17 @@
   "description": "Internet radio controller for Raspberry Pi with GPIO input and web status page",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "npm run build:server && npm run build:web",
+    "build:server": "tsc",
+    "build:web": "vite build --config frontend/vite.config.ts",
+    "check:web": "svelte-check --workspace frontend --tsconfig tsconfig.json",
     "deploy": "./deploy.sh",
     "deploy:minuett": "RADIONETTE_REMOTE=pi@minuett.local ./deploy.sh",
     "deploy:radionette": "RADIONETTE_REMOTE=pi@radionette.local ./deploy.sh",
     "deploy:install": "./deploy.sh --install",
     "deploy:refresh": "./deploy.sh --refresh",
     "dev": "tsc --watch",
+    "dev:web": "vite --config frontend/vite.config.ts",
     "gpio-logger": "node dist/gpio-logger.js",
     "smoke-display": "node dist/scripts/display-smoke.js",
     "render-test": "node dist/scripts/display-render-test.js",
@@ -25,12 +29,16 @@
     "ioctl": "^2.0.2",
     "rpio": "^2.4.2",
     "spi-device": "^3.1.2",
-    "ws": "^8.20.0"
+    "ws": "^8.22.0"
   },
   "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@types/console-stamp": "^0.2.33",
     "@types/node": "^25.5.0",
     "@types/ws": "^8.18.1",
-    "typescript": "^6.0.2"
+    "svelte": "^5.57.2",
+    "svelte-check": "^4.7.7",
+    "typescript": "^6.0.2",
+    "vite": "^7.3.7"
   }
 }

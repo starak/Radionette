@@ -62,11 +62,11 @@ Power ON + Bluetooth OFF
 | `src/wifi.ts` | WiFi management via `nmcli` — scan for networks, connect (triggers playback retry on success), start/stop hotspot, hotspot detection, WiFi reset, system reboot. Write operations use `sudo nmcli`. Falls back to mock data in dev mode. |
 | `src/hotspot-alert.ts` | Periodic bleep alert when hotspot is active in radio mode. Uses `aplay` (ALSA) for early-boot compatibility before PulseAudio starts. Polls hotspot status every 5s, loops `hotspot-bleep.wav` via aplay. |
 | `src/static-noise.ts` | Plays a short (~600 ms) white-noise burst through the PulseAudio `radionette` sink whenever the tuner (or the rotary-band fallback in `gpio.ts`) commits a different channel — mimics analog inter-station hiss and usefully bridges the stream-respawn gap. Overlapping triggers SIGKILL the in-flight burst so fast tuning sounds like one continuous shhhhh. 120 ms dedupe swallows duplicate triggers from the tuner + fallback paths. Gated on `mode === "radio"` and `power === true`. Uses `paplay --device=radionette assets/tuner-static.wav`. |
-| `src/public/index.html` | Artwork-first live status dashboard with station/album art, ambient background, metadata, playback/mode/audio/display chips, volume meter and grouped station catalogue. |
-| `src/public/wifi.html` | WiFi status, scan list with signal bars, and connect modal with hotspot warning. |
-| `src/public/debug.html` | Live GPIO/tuner diagnostics, virtual controls, clickable temporary channel override, display testing, tint, calibration and system actions. “Reset everything to physical” clears every temporary debug override. |
-| `src/public/settings.html` | PIN-protected per-radio station/band editor, hardware mapping capture, persistent tint, backup/import and PIN change controls. |
-| `src/public/app.css` | Shared 1080px page shell, navigation, cards, iPhone safe-area and responsive styling. |
+| `frontend/src/App.svelte` | Lightweight pathname router for the Svelte SPA. Routes Status, WiFi, Debug, Settings and PIN login without adding a client router dependency. |
+| `frontend/src/components/AppShell.svelte` | Shared header/navigation shell; remains visible on the PIN screen so unauthenticated users can leave Settings. |
+| `frontend/src/lib/radio.ts` | Shared reconnecting WebSocket store for live radio state. |
+| `frontend/src/pages/*.svelte` | Artwork-first Status, WiFi management, live Debug controls, persistent Settings editor and PIN login. |
+| `frontend/src/app.css` | Shared 1080px shell, cards, iPhone safe-area, pull-to-refresh-compatible and responsive styling. |
 | `src/gpio-logger.ts` | Standalone utility — logs raw GPIO values on change for mapping physical dial positions. |
 | `src/display.ts` | Low-level GC9A01 SPI driver. `initDisplay`, `drawRgb565Buffer`, `fillScreen`, `testPattern`, `stopDisplay`. Uses `spi-device` + `rpio`. Closes GPIO with `PIN_PRESERVE` on shutdown so the last frame stays visible. |
 | `src/render/frame.ts` | Pixel-format helpers — RGBA8888 -> RGB565 big-endian, solid-colour frame builder. |
@@ -302,29 +302,25 @@ The display stack drives a Waveshare-style GC9A01 1.28" 240x240 round IPS panel 
 
 ### Web UI Conventions
 
-All HTML pages are single-file with inline CSS and JS (no external dependencies). They share:
+The frontend is a Svelte 5 SPA built by Vite from `frontend/` into `dist/public`:
 
-- **Dark theme** with neutral grey palette via CSS custom properties in `:root`:
-  ```css
-  --bg: #1a1a1a; --bg-card: #252525; --bg-hover: #2e2e2e;
-  --border: #333; --text: #ddd; --text-sec: #999;
-  --text-muted: #777; --text-dim: #666; --dot-off: #4a4a4a;
-  --accent: #7daf8b; --accent-bg: #2a3a2e; --blue: #6b8db5;
-  --red: #c0392b; --red-bg: #3a2a2a; --amber: #c9a84c; --amber-bg: #332e1a;
-  ```
-- **Tab navigation** below the title: `Status | WiFi | Debug` — active tab highlighted in `--accent` with underline
-- **Title:** `<h1><a href="/">RADIONETTE</a></h1>` (white `#fff`)
-- **Cards:** `.status-card` or `.card` class — dark card with rounded corners and border
-- **Channel lists** are grouped by band using names from the server-sent `bands` array, sorted by `order` within each band; the row shows the sparse `order` value as a hint (10, 20, …)
+- `AppShell.svelte` owns the consistent header and Status / WiFi / Debug / Settings navigation.
+- `frontend/src/app.css` owns shared 1080px layout, dark theme, cards, controls, responsive behavior and iPhone safe-area support.
+- `lib/radio.ts` provides one reconnecting WebSocket store shared by every page.
+- `lib/api.ts` centralises JSON errors and settings-session redirects.
+- Routing is a tiny History API store; direct page requests are served the same Vite `index.html` by `src/web.ts`.
+- Settings API/session protection remains server-side; frontend routing is not treated as authorization.
 
 ## Development
 
-Built with TypeScript on a dev machine, runs as compiled JS on the Pi.
+The backend is TypeScript; the frontend is Svelte 5 + Vite + TypeScript. The Pi runs only compiled server JS and static Vite assets.
 
 ```bash
 npm install          # Install dependencies (dev machine)
-npm run build        # Compile TypeScript -> dist/
-npm run dev          # Watch mode
+npm run build        # Backend TypeScript + Vite production bundle
+npm run check:web    # Svelte/TypeScript diagnostics
+npm run dev          # Backend TypeScript watch mode
+npm run dev:web      # Vite dev server with Pi API/WebSocket proxies
 ```
 
 When rpio is unavailable (not on a Pi), GPIO falls back to dev mode — power defaults to on, web UI still works.
@@ -336,14 +332,13 @@ npm run deploy       # Builds, rsyncs to pi@radionette.local:~/code/, installs d
 ```
 
 The deploy script (`deploy.sh`) does:
-1. `npm run build` (TypeScript -> JS)
+1. `npm run build` (backend TypeScript + Svelte/Vite frontend into `dist/public`)
 2. rsync `dist/` to Pi (with `--delete`)
 3. rsync `channels.json`, `package.json`, `package-lock.json` to Pi
-4. rsync `src/public/` to `dist/public/` on Pi (HTML not handled by tsc)
-5. rsync `assets/` to Pi (sound files)
-6. rsync `wifi-fallback.sh` to Pi (+ chmod +x)
-7. `npm install --omit=dev` on Pi (compiles native `rpio` addon)
-8. `pm2 restart radionette` (or `pm2 start` on first deploy) + `pm2 save`
+4. rsync `assets/` to Pi (sound files)
+5. rsync `wifi-fallback.sh` to Pi (+ chmod +x)
+6. install production dependencies only when missing or explicitly requested
+7. `pm2 restart radionette` (or `pm2 start` on first deploy) + `pm2 save`
 
 ## Raspberry Pi Setup
 

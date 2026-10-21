@@ -290,12 +290,14 @@ The settings page and `/api/settings/*` APIs use a PIN with an 8-hour session co
 
 ```bash
 npm install          # Install dependencies
-npm run build        # Compile TypeScript
-npm run dev          # Watch mode (auto-rebuild on changes)
+npm run build        # Compile backend + build the Svelte frontend
+npm run check:web    # Type-check Svelte components
+npm run dev          # Watch backend TypeScript
+npm run dev:web      # Vite frontend dev server (proxies to radionette.local)
 npm run deploy       # Build + deploy to Pi + restart
 ```
 
-When running on a machine without GPIO (e.g. your laptop), the app falls back to dev mode — power defaults to on and the web UI works normally.
+The Vite dev server proxies API, logo and WebSocket traffic to `radionette.local:8080`, so frontend work can run locally while the hardware backend stays on the Pi.
 
 ### Local Settings
 
@@ -348,7 +350,7 @@ The default display tint is **Ember** (`R=1.15`, `G=0.60`, `B=0.30`). It can sti
 
 ## Configuring Stations
 
-Edit `channels.json`. The file has two top-level arrays: `bands` and `channels`.
+Use the PIN-protected `/settings` page for per-radio station editing. It stores the active configuration in `~/.radionette/channels.json`, which survives deployment. The repository's `channels.json` remains the factory/default configuration and has two top-level arrays: `bands` and `channels`.
 
 ```json
 {
@@ -408,18 +410,19 @@ radionette/
     wifi.ts              # WiFi scanning, connecting, hotspot (nmcli)
     hotspot-alert.ts     # Periodic bleep when hotspot is active in radio mode
     web.ts               # HTTP + WebSocket server
-    public/
-      index.html         # Artwork-first live status dashboard
-      wifi.html          # WiFi scan/connect page
-      debug.html         # GPIO, tuner, channel override and diagnostics
-      settings.html      # Stations, mappings, tint, backup/import editor
-      settings-login.html # PIN login for persistent settings
-      app.css            # Shared visual shell for all web pages
     gpio-logger.ts       # Utility for mapping dial positions
     scripts/
       display-smoke.ts       # Colour-bar hardware test for the GC9A01
       display-render-test.ts # Cycle every channel logo through the pipeline
       as5600-monitor.ts      # Live AS5600 angle/health monitor
+  frontend/              # Svelte 5 + Vite single-page application
+    src/
+      components/        # Shared shell and feedback components
+      lib/               # Router, API client, WebSocket store
+      pages/             # Status, WiFi, Debug, Settings and PIN login
+      App.svelte
+      app.css
+    vite.config.ts       # Builds into dist/public
   assets/
     channel-logos/       # Per-station logo PNG/GIF files (+ default/bluetooth)
     bt-connect.wav       # Sound: device connected
