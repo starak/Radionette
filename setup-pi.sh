@@ -110,6 +110,21 @@ if [ -n "${BOOT_CONFIG}" ]; then
       REBOOT_NEEDED=1
     fi
   done
+
+  # GPIO17 controls an active-HIGH relay that switches the 12 V amplifier and
+  # radio lights. Hold it as an output LOW from the earliest firmware boot
+  # stage so the relay cannot chatter while Linux and the app are starting.
+  if grep -qE "^\s*gpio=17=op,dl\s*$" "${BOOT_CONFIG}"; then
+    ok "GPIO17 output LOW boot state already present in ${BOOT_CONFIG}"
+  elif grep -qE "^\s*gpio=17=" "${BOOT_CONFIG}"; then
+    sudo sed -i -E 's|^\s*gpio=17=.*$|gpio=17=op,dl|' "${BOOT_CONFIG}"
+    ok "Set GPIO17 output LOW at boot in ${BOOT_CONFIG}"
+    REBOOT_NEEDED=1
+  else
+    echo "gpio=17=op,dl" | sudo tee -a "${BOOT_CONFIG}" > /dev/null
+    ok "Appended GPIO17 output LOW boot state to ${BOOT_CONFIG}"
+    REBOOT_NEEDED=1
+  fi
 fi
 
 # ---------- 2b. Ensure i2c-dev module is loaded ----------

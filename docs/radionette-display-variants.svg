@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1680" height="1100" viewBox="0 0 1680 1100">
+  <title>Radionette Wiring</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <path id="Display_background" data-name="Display background" d="M0 0 L1680 0 L1680 1100 L0 1100 Z" fill="#f8fafc"/>
+    <path id="Display_title_bar" data-name="Display title bar" d="M0 0 L1680 0 L1680 96 L0 96 Z" fill="#0f172a"/>
+    <path id="Bare_display_variant" data-name="Bare display variant" d="M51 125 L779 125 C787.837 125 795 132.163 795 141 L795 759 C795 767.837 787.837 775 779 775 L51 775 C42.163 775 35 767.837 35 759 L35 141 C35 132.163 42.163 125 51 125 Z" fill="#ffffff" stroke="#2563eb" stroke-width="2" stroke-miterlimit="10"/>
+    <path id="PCB_display_variant" data-name="PCB display variant" d="M841 125 L1589 125 C1597.837 125 1605 132.163 1605 141 L1605 759 C1605 767.837 1597.837 775 1589 775 L841 775 C832.163 775 825 767.837 825 759 L825 141 C825 132.163 832.163 125 841 125 Z" fill="#ffffff" stroke="#7c3aed" stroke-width="2" stroke-miterlimit="10"/>
+    <path id="Shared_notes" data-name="Shared notes" d="M51 805 L1589 805 C1597.837 805 1605 812.163 1605 821 L1605 1034 C1605 1042.837 1597.837 1050 1589 1050 L51 1050 C42.163 1050 35 1042.837 35 1034 L35 821 C35 812.163 42.163 805 51 805 Z" fill="#ffffff" stroke="#94a3b8" stroke-width="2" stroke-miterlimit="10"/>
+    <path id="Pi_A" data-name="Pi A" d="M82 205 L358 205 C364.627 205 370 210.373 370 217 L370 693 C370 699.627 364.627 705 358 705 L82 705 C75.373 705 70 699.627 70 693 L70 217 C70 210.373 75.373 205 82 205 Z" fill="#eff6ff" stroke="#bfdbfe" stroke-miterlimit="10"/>
+    <path id="Bare_GC9A01" data-name="Bare GC9A01" d="M472 205 L748 205 C754.627 205 760 210.373 760 217 L760 693 C760 699.627 754.627 705 748 705 L472 705 C465.373 705 460 699.627 460 693 L460 217 C460 210.373 465.373 205 472 205 Z" fill="#fff7ed" stroke="#fed7aa" stroke-miterlimit="10"/>
+    <path id="Pi_B" data-name="Pi B" d="M872 205 L1148 205 C1154.627 205 1160 210.373 1160 217 L1160 693 C1160 699.627 1154.627 705 1148 705 L872 705 C865.373 705 860 699.627 860 693 L860 217 C860 210.373 865.373 205 872 205 Z" fill="#eff6ff" stroke="#bfdbfe" stroke-miterlimit="10"/>
+    <path id="_8_pin_module" data-name="8 pin module" d="M1272 205 L1558 205 C1564.627 205 1570 210.373 1570 217 L1570 693 C1570 699.627 1564.627 705 1558 705 L1272 705 C1265.373 705 1260 699.627 1260 693 L1260 217 C1260 210.373 1265.373 205 1272 205 Z" fill="#faf5ff" stroke="#ddd6fe" stroke-miterlimit="10"/>
+    <path id="Bare_display_wire" data-name="Bare display wire" d="M370 270 L460 270" fill="none" stroke="#475569" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="Bare_display_wire-2" data-name="Bare display wire" d="M370 310 L460 310" fill="none" stroke="#475569" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="Bare_display_wire-3" data-name="Bare display wire" d="M370 350 L460 350" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="Bare_display_wire-4" data-name="Bare display wire" d="M370 390 L460 390" fill="none" stroke="#dc2626" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="Bare_display_wire-5" data-name="Bare display wire" d="M370 430 L460 430" fill="none" stroke="#7c3aed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="Bare_display_wire-6" data-name="Bare display wire" d="M370 470 L460 470" fill="none" stroke="#7c3aed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="Bare_display_wire-7" data-name="Bare display wire" d="M370 510 L460 510" fill="none" stroke="#7c3aed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="Bare_display_wire-8" data-name="Bare display wire" d="M370 550 L460 550" fill="none" stroke="#7c3aed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="Bare_display_wire-9" data-name="Bare display wire" d="M370 590 L460 590" fill="none" stroke="#7c3aed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="PCB_display_wire" data-name="PCB display wire" d="M1160 270 L1260 270" fill="none" stroke="#475569" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="PCB_display_wire-2" data-name="PCB display wire" d="M1160 320 L1260 320" fill="none" stroke="#dc2626" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="PCB_display_wire-3" data-name="PCB display wire" d="M1160 370 L1260 370" fill="none" stroke="#7c3aed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="PCB_display_wire-4" data-name="PCB display wire" d="M1160 420 L1260 420" fill="none" stroke="#7c3aed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="PCB_display_wire-5" data-name="PCB display wire" d="M1160 470 L1260 470" fill="none" stroke="#7c3aed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="PCB_display_wire-6" data-name="PCB display wire" d="M1160 520 L1260 520" fill="none" stroke="#7c3aed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="PCB_display_wire-7" data-name="PCB display wire" d="M1160 570 L1260 570" fill="none" stroke="#7c3aed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="PCB_display_wire-8" data-name="PCB display wire" d="M1160 620 L1260 620" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <text transform="matrix(1 0 0 1 40 61)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="30" fill="#ffffff"><tspan x="0" y="0">RADIONETTE — GC9A01 DISPLAY VARIANTS</tspan></text>
+    <text transform="matrix(1 0 0 1 40 84)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#cbd5e1"><tspan x="0" y="0">Existing bare panel and optional 8-pin PCB module</tspan></text>
+    <text transform="matrix(1 0 0 1 65 169)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="21" fill="#1d4ed8"><tspan x="0" y="0">A — EXISTING BARE 14/15-PIN PANEL</tspan></text>
+    <text transform="matrix(1 0 0 1 850 169)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="21" fill="#6d28d9"><tspan x="0" y="0">B — OPTIONAL 8-PIN PCB MODULE</tspan></text>
+    <text transform="matrix(1 0 0 1 70 197)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">As built: backlight connected directly; no MOSFET</tspan></text>
+    <text transform="matrix(1 0 0 1 850 197)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">GC9A01 • 240×240 • 2.8–3.3 V • 4-wire SPI</tspan></text>
+    <text transform="matrix(1 0 0 1 70 244)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="17" fill="#1d4ed8"><tspan x="0" y="0">RASPBERRY PI</tspan></text>
+    <text transform="matrix(1 0 0 1 460 244)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="17" fill="#c2410c"><tspan x="0" y="0">BARE PANEL</tspan></text>
+    <text transform="matrix(1 0 0 1 860 244)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="17" fill="#1d4ed8"><tspan x="0" y="0">RASPBERRY PI</tspan></text>
+    <text transform="matrix(1 0 0 1 1260 244)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="17" fill="#6d28d9"><tspan x="0" y="0">8-PIN MODULE</tspan></text>
+    <text transform="matrix(1 0 0 1 75 275)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">GND / pin 39</tspan></text>
+    <text transform="matrix(1 0 0 1 465 275)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">1  GND</tspan></text>
+    <text transform="matrix(1 0 0 1 75 315)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">GND / pin 39</tspan></text>
+    <text transform="matrix(1 0 0 1 465 315)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">2  LEDK</tspan></text>
+    <text transform="matrix(1 0 0 1 75 355)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#1d4ed8"><tspan x="0" y="0">BCM 13 / pin 33</tspan></text>
+    <text transform="matrix(1 0 0 1 465 355)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#1d4ed8"><tspan x="0" y="0">3  LEDA</tspan></text>
+    <text transform="matrix(1 0 0 1 75 395)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">3V3 / pin 1</tspan></text>
+    <text transform="matrix(1 0 0 1 465 395)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">4  VDD</tspan></text>
+    <text transform="matrix(1 0 0 1 75 435)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">BCM 27 / pin 13</tspan></text>
+    <text transform="matrix(1 0 0 1 465 435)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">5  D/C</tspan></text>
+    <text transform="matrix(1 0 0 1 75 475)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">BCM 8 / pin 24</tspan></text>
+    <text transform="matrix(1 0 0 1 465 475)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">6  CS</tspan></text>
+    <text transform="matrix(1 0 0 1 75 515)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">BCM 11 / pin 23</tspan></text>
+    <text transform="matrix(1 0 0 1 465 515)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">7  SCL</tspan></text>
+    <text transform="matrix(1 0 0 1 75 555)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">BCM 10 / pin 19</tspan></text>
+    <text transform="matrix(1 0 0 1 465 555)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">8  SDA</tspan></text>
+    <text transform="matrix(1 0 0 1 75 595)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">BCM 22 / pin 15</tspan></text>
+    <text transform="matrix(1 0 0 1 465 595)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">9  RESET</tspan></text>
+    <text transform="matrix(1 0 0 1 865 275)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">GND</tspan></text>
+    <text transform="matrix(1 0 0 1 1265 275)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">GND</tspan></text>
+    <text transform="matrix(1 0 0 1 865 325)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">3V3 / pin 1</tspan></text>
+    <text transform="matrix(1 0 0 1 1265 325)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">VCC</tspan></text>
+    <text transform="matrix(1 0 0 1 865 375)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">BCM 11 / pin 23</tspan></text>
+    <text transform="matrix(1 0 0 1 1265 375)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">SCL</tspan></text>
+    <text transform="matrix(1 0 0 1 865 425)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">BCM 10 / pin 19</tspan></text>
+    <text transform="matrix(1 0 0 1 1265 425)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">SDA</tspan></text>
+    <text transform="matrix(1 0 0 1 865 475)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">BCM 22 / pin 15</tspan></text>
+    <text transform="matrix(1 0 0 1 1265 475)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">RES</tspan></text>
+    <text transform="matrix(1 0 0 1 865 525)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">BCM 27 / pin 13</tspan></text>
+    <text transform="matrix(1 0 0 1 1265 525)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">DC</tspan></text>
+    <text transform="matrix(1 0 0 1 865 575)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">BCM 8 / pin 24</tspan></text>
+    <text transform="matrix(1 0 0 1 1265 575)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">CS</tspan></text>
+    <text transform="matrix(1 0 0 1 865 625)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#1d4ed8"><tspan x="0" y="0">BCM 13 / pin 33</tspan></text>
+    <text transform="matrix(1 0 0 1 1265 625)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#1d4ed8"><tspan x="0" y="0">BLK</tspan></text>
+    <text transform="matrix(1 0 0 1 465 635)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">Pins 10–15 TP-*</tspan></text>
+    <text transform="matrix(1 0 0 1 465 659)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">leave unconnected</tspan></text>
+    <text transform="matrix(1 0 0 1 65 849)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="21" fill="#334155"><tspan x="0" y="0">INSTALLATION NOTES</tspan></text>
+    <text transform="matrix(1 0 0 1 65 876)" x="0" y="14.531" xml:space="preserve" font-family="Inter" font-size="15" fill="#334155"><tspan x="0" y="14.531">• Power the Pi off before changing display wiring.</tspan><tspan x="0" y="32.531">• Both variants use the same SPI, DC and reset signals.</tspan><tspan x="0" y="50.531">• GPIO 13 is active HIGH: on while HIGH, off while LOW.</tspan><tspan x="0" y="68.531">• Software auto-off is 20 seconds after the last visible event.</tspan></text>
+    <text transform="matrix(1 0 0 1 825 876)" x="0" y="14.531" xml:space="preserve" font-family="Inter" font-size="15" fill="#334155"><tspan x="0" y="14.531">• Use 3.3 V only; the new module is specified for 2.8–3.3 V.</tspan><tspan x="0" y="32.531">• Existing bare panel is documented exactly as built: LEDA directly to GPIO 13 and LEDK to GND.</tspan><tspan x="0" y="50.531">• Before duplicating the bare-panel wiring, verify backlight current is within GPIO limits.</tspan></text>
+  </g>
+</svg>

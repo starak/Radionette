@@ -1,4 +1,5 @@
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import { ChannelInfo } from "./state";
 
@@ -50,6 +51,8 @@ interface ChannelsConfig {
   channels: ChannelEntry[];
 }
 
+type BandHardwareOverride = Record<string, number>;
+
 // ── Module state ───────────────────────────────────────────────────────
 
 let bandsByOrdinal: Map<number, BandInfo> = new Map();
@@ -97,6 +100,30 @@ export function loadChannels(configPath?: string): void {
       `[Channels] ${filePath}: expected \`bands\` and \`channels\` arrays`
     );
     return;
+  }
+
+  // A radio's physical selector may produce different nibble values from
+  // another radio even though both use the same stations and logical bands.
+  // Keep that machine-specific wiring outside channels.json so normal deploys
+  // don't overwrite it and one checkout can serve multiple radios.
+  const overridePath =
+    process.env.RADIONETTE_BAND_MAPPING ||
+    path.join(os.homedir(), ".radionette", "band-mapping.json");
+  if (fs.existsSync(overridePath)) {
+    try {
+      const override = JSON.parse(
+        fs.readFileSync(overridePath, "utf-8"),
+      ) as BandHardwareOverride;
+      config.bands = config.bands.map((band) => {
+        const hardware = override[String(band.ordinal)];
+        return Number.isInteger(hardware) && hardware >= 0 && hardware <= 15
+          ? { ...band, hardware }
+          : band;
+      });
+      console.log(`[Channels] Applied band mapping override from ${overridePath}`);
+    } catch (err) {
+      console.error(`[Channels] Failed to read band mapping override ${overridePath}:`, err);
+    }
   }
 
   // Validate + index bands

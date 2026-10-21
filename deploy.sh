@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-REMOTE="pi@radionette.local"
+REMOTE="${RADIONETTE_REMOTE:-pi@radionette.local}"
 REMOTE_DIR="~/code"
 
 # Parse flags

@@ -11,13 +11,13 @@ Internet radio controller for Raspberry Pi 4 Model B. Reads physical radio dial 
   - Bit 8 (GPIO 20): Bluetooth indicator
   - Bit 9 (GPIO 21): Power indicator
   - Bit 10 (GPIO 19): Stereo switch (LOW = mono [default, fail-safe], HIGH = stereo). Bit is inverted in software so an open/disconnected switch defaults to mono.
-- **2 GPIO output pins** for indicator LEDs
-  - GPIO 17: Power LED
+- **2 GPIO output pins** for the 12 V relay and Bluetooth indicator
+  - GPIO 17: active-HIGH relay controlling the separate 12 V amplifier/lights circuit
   - GPIO 26: Bluetooth LED
 - **GC9A01 1.28" 240x240 round IPS display** on SPI0
   - SPI0 CS=GPIO 8, SCLK=GPIO 11, MOSI=GPIO 10
   - D/C=GPIO 27, RESET=GPIO 22
-  - Backlight (LEDA) switched via GPIO 13 through a MOSFET — pure on/off (no PWM dimming; software PWM flickered, hardware PWM would clash with the analog audio jack). Auto-off 10 s after the last user-visible event (channel change, BT device connect, power-on). Stays on while in BT search mode.
+  - Backlight is driven directly by GPIO 13 (LEDA on the bare panel or BLK on the 8-pin module) — pure on/off. Auto-off 20 s after the last user-visible event (channel change, BT device connect, power-on). Stays on while in BT search mode.
 - Audio output via 3.5mm jack or HDMI
 - **ADS1115 16-bit ADC** on I2C bus 1 (address 0x48) — reads volume potentiometer on channel A0
 
@@ -28,7 +28,7 @@ Power OFF (bit 9 LOW)
   -> Everything stops. LEDs off. Web shows "Power Off".
 
 Power ON + Bluetooth ON (bit 8 HIGH)
-  -> Radio stops. Power LED on, BT LED on.
+  -> Radio stops. 12 V relay on, BT LED on.
   -> BT adapter enabled, discoverable as "Radionette" (speaker icon).
   -> Plays bt-ready.wav sound.
   -> Phones can connect and stream audio via A2DP.
@@ -37,7 +37,7 @@ Power ON + Bluetooth ON (bit 8 HIGH)
 
 Power ON + Bluetooth OFF
   -> Radio mode. Read bits 0-7, look up channel, play stream.
-  -> Power LED on, BT LED off. Web shows station + metadata.
+  -> 12 V relay on, BT LED off. Web shows station + metadata.
 ```
 
 ### Modules
@@ -68,7 +68,7 @@ Power ON + Bluetooth OFF
 | `src/render/displayController.ts` | Orchestrator — owns display lifecycle, single-slot paint queue (newer requests supersede in-flight loads), animation timer for GIFs, graceful shutdown that waits for in-flight paint so PIN_PRESERVE leaves a coherent frame. |
 | `src/display-service.ts` | Glue between `radioState` events and `displayController`. State -> logo mapping: power off = black; bluetooth + no device = `bluetooth.png`; bluetooth + connected = `bluetooth-connected.png`; radio + `nowPlayingArtwork.url` (if any) = live album art; else radio + channel with a resolvable `channel.logo` file = that file; else radio + channel = synthesised text tile `text:<id>|<name>`. Never falls through to a generic default.png for an unbranded channel. |
 | `src/artwork.ts` | Listens to `player:metadata`, parses "Artist - Song" (or NRK-style "Programme: Title, Artist"), queries the iTunes Search API for the matching song, and pushes the highest-resolution (600x600) artwork URL through `radioState.setArtwork()`. Debounces metadata bursts (400 ms), caches lookups by lowercased artist+title, evicts oldest entries when the cache reaches 200. Clears artwork on channel change and player stop. |
-| `src/backlight.ts` | Owns GPIO 13 (the LEDA MOSFET gate). On/off only (no PWM). Wakes on channel changes, artwork changes and BT device connect and re-arms a 20 s auto-off timer. Locks bright while in BT search (no auto-off). Exposes `setBacklightOverrideLock()` used by the debug logo-override to keep the panel visible while inspecting. |
+| `src/backlight.ts` | Owns GPIO 13 (direct LEDA/BLK control). On/off only (no PWM). Wakes on channel changes, artwork changes and BT device connect and re-arms a 20 s auto-off timer. Locks bright while in BT search (no auto-off). Exposes `setBacklightOverrideLock()` used by the debug logo-override to keep the panel visible while inspecting. |
 | `src/scripts/display-smoke.ts` | Hardware smoke test — red/green/blue/RGBW bars cycle. Run with `npm run smoke-display` on the Pi. |
 | `src/scripts/display-render-test.ts` | Render pipeline test — cycles through every channel logo + BT logos + default fallback. Run with `npm run render-test` on the Pi. |
 | `src/scripts/as5600-monitor.ts` | Live AS5600 diagnostic — prints RAW_ANGLE, angle in degrees, magnet STATUS (MD/ML/MH), AGC and MAGNITUDE every 100 ms with a session min/max summary on Ctrl-C. Run with `npm run as5600-monitor` on the Pi (stop radionette first so the ADC isn't contended). |
@@ -271,7 +271,7 @@ The hotspot alert module (`src/hotspot-alert.ts`) provides an audible notificati
 The display stack drives a Waveshare-style GC9A01 1.28" 240x240 round IPS panel via SPI0:
 
 - **Driver (`src/display.ts`):** Low-level SPI + GPIO. Uses `spi-device` for SPI (mode 0, 32 MHz, 4096-byte chunks) and `rpio` for D/C and RESET. Init sequence is the proven Waveshare variant (MADCTL=0x48, COLMOD=0x05, inversion ON, 50/50/150 ms reset pulse). `stopDisplay()` closes the GPIO pins with `rpio.PIN_PRESERVE` so the last frame stays visible after Node exits — this is critical, otherwise the panel blanks the moment the process dies.
-- **Backlight (`src/backlight.ts`):** GPIO 13 drives a MOSFET that switches the panel's LEDA rail. `gpio.ts` opens the pin OUTPUT/LOW at init then hands the pin handle to `backlight.ts` (via `getBacklightHandle()`). Pure on/off — no PWM. (Software PWM via `setInterval` produced bad visible flicker; hardware PWM on PWM1/GPIO 13 would clash with the right channel of the 3.5mm analog audio jack.) Auto-off policy: backlight ON for 20 s (`OFF_AFTER_MS`) after `power:on`, then OFF. The timer restarts on any visible content change: `channel:change`, `artwork:change` (album art appears / clears) and Bluetooth device connect. Entering BT search mode (mode = bluetooth, no device) locks the backlight ON with no auto-off until either a device connects or we leave BT mode. `power:off` cuts the backlight and clears all timers. `setBacklightOverrideLock()` (used by the debug logo-override endpoint) forces the backlight ON indefinitely until the caller releases the lock. Pin is closed by `gpio.ts.stopGpio()` after `stopBacklight()` clears the timer.
+- **Backlight (`src/backlight.ts`):** GPIO 13 drives the panel backlight directly (LEDA on the bare panel or BLK on the 8-pin module). `gpio.ts` opens the pin OUTPUT/LOW at init then hands the pin handle to `backlight.ts` (via `getBacklightHandle()`). Pure on/off — no PWM. Auto-off policy: backlight ON for 20 s (`OFF_AFTER_MS`) after `power:on`, then OFF. The timer restarts on any visible content change: `channel:change`, `artwork:change` (album art appears / clears) and Bluetooth device connect. Entering BT search mode (mode = bluetooth, no device) locks the backlight ON with no auto-off until either a device connects or we leave BT mode. `power:off` cuts the backlight and clears all timers. `setBacklightOverrideLock()` (used by the debug logo-override endpoint) forces the backlight ON indefinitely until the caller releases the lock. Pin is closed by `gpio.ts.stopGpio()` after `stopBacklight()` clears the timer.
 - **Render pipeline (`src/render/`):**
   - `frame.ts` — pure pixel-format helpers. Converts an RGBA8888 240x240 buffer to RGB565 big-endian (115200 bytes) suitable for `drawRgb565Buffer()`. Also `solidFrame(r,g,b)` for fallback paint. Applies the display tint LUT (per-channel R/G/B multipliers) baked at conversion time.
   - `logos.ts` — resolves a logo reference into a cached RGB565 frame. Three sources: local PNG/GIF files via `node-canvas` and `gifuct-js`; http(s):// URLs (used by the now-playing album-art feed) fetched with an 8 s timeout and rasterised via `loadImage(Buffer)`; and `text:<id>|<name>` synthetic references rendered from an SVG (badge + gradient + wrapped text) and rasterised through the same SVG-loadImage path. Each frame is composited onto a 240x240 canvas with a circular clip path (anything outside the circle stays black), "contain"-fit and centred. Animated GIFs are decoded honouring disposal types and per-frame delays. Results are cached in a shared Map keyed by absolute path, URL or full text ref.

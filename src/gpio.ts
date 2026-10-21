@@ -22,11 +22,11 @@ const MONO_PIN = 19; // bit 10
 
 const ALL_INPUT_PINS = [...CHANNEL_PINS, BLUETOOTH_PIN, POWER_PIN, MONO_PIN];
 
-// Output pins — indicator lights
-const POWER_LED_PIN = 17;     // Power indicator light
+// Output pins
+const POWER_RELAY_PIN = 17;   // Active-HIGH relay: switched 12 V amp + radio lights
 const BLUETOOTH_LED_PIN = 26; // Bluetooth indicator light
 const BACKLIGHT_PIN = 13;     // Display backlight (HIGH = on, LOW = off)
-                              // Wire LEDA via MOSFET gate, or LEDK→GND through transistor
+                              // Direct to LEDA (bare panel) or BLK (8-pin module)
 
 const POLL_INTERVAL_MS = 10;
 const DEBOUNCE_MS = 50;
@@ -121,7 +121,7 @@ function processValue(rawValue: number): void {
 
 function updateOutputs(power: boolean, bluetooth: boolean): void {
   if (!rpio) return;
-  rpio.write(POWER_LED_PIN, power ? rpio.HIGH : rpio.LOW);
+  rpio.write(POWER_RELAY_PIN, power ? rpio.HIGH : rpio.LOW);
   rpio.write(BLUETOOTH_LED_PIN, bluetooth ? rpio.HIGH : rpio.LOW);
   // Backlight is owned by backlight.ts (driven via PWM, reacting to state
   // events). Do not write BACKLIGHT_PIN here — it would fight the PWM loop.
@@ -202,9 +202,18 @@ export function startGpio(): void {
     console.log(`[GPIO] Pin ${pin} ready (INPUT, PULL_DOWN)`);
   });
 
-  // Set up output pins
-  rpio.open(POWER_LED_PIN, rpio.OUTPUT, rpio.LOW);
-  console.log(`[GPIO] Pin ${POWER_LED_PIN} ready (OUTPUT, Power LED)`);
+  // Initialise the active-HIGH 12 V relay to the current power-input state.
+  // Opening it unconditionally LOW and waiting for the debounced poll would
+  // produce an unnecessary off/on pulse every time the app starts.
+  const initialPowerOn = rpio.read(POWER_PIN) === rpio.HIGH;
+  rpio.open(
+    POWER_RELAY_PIN,
+    rpio.OUTPUT,
+    initialPowerOn ? rpio.HIGH : rpio.LOW,
+  );
+  console.log(
+    `[GPIO] Pin ${POWER_RELAY_PIN} ready (OUTPUT, 12V Relay, initial=${initialPowerOn ? "ON" : "OFF"})`,
+  );
   rpio.open(BLUETOOTH_LED_PIN, rpio.OUTPUT, rpio.LOW);
   console.log(`[GPIO] Pin ${BLUETOOTH_LED_PIN} ready (OUTPUT, Bluetooth LED)`);
   rpio.open(BACKLIGHT_PIN, rpio.OUTPUT, rpio.LOW);
@@ -311,7 +320,7 @@ export function stopGpio(): void {
   if (!rpio) return;
 
   console.log("[GPIO] Cleaning up pins...");
-  rpio.write(POWER_LED_PIN, rpio.LOW);
+  rpio.write(POWER_RELAY_PIN, rpio.LOW);
   rpio.write(BLUETOOTH_LED_PIN, rpio.LOW);
   // BACKLIGHT_PIN is set LOW by stopBacklight() before we get here.
   rpio.write(BACKLIGHT_PIN, rpio.LOW);
@@ -319,7 +328,7 @@ export function stopGpio(): void {
   ALL_INPUT_PINS.forEach((pin) => {
     rpio.close(pin);
   });
-  rpio.close(POWER_LED_PIN);
+  rpio.close(POWER_RELAY_PIN);
   rpio.close(BLUETOOTH_LED_PIN);
   rpio.close(BACKLIGHT_PIN);
   console.log("[GPIO] Cleanup complete.");

@@ -18,7 +18,8 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 - Raspberry Pi 4 Model B
 - Rotary dial switch wired to 10 GPIO input pins
 - Mono/stereo switch on 1 GPIO input pin
-- 2 LEDs (power + Bluetooth indicator)
+- Active-HIGH relay on GPIO 17 controlling the 12 V amplifier and radio lights
+- Bluetooth indicator LED
 - GC9A01 1.28" 240x240 round IPS display on SPI0
 - ADS1115 16-bit ADC on I2C bus 1 for the volume potentiometer (AIN0)
 - AS5600 12-bit magnetic angle sensor on I2C bus 1 (address 0x36), reading the tuning-needle shaft angle directly over I2C
@@ -35,7 +36,7 @@ All input pins use internal pull-down resistors.
          (SCL)  GP03 =|  5   6 |= GND
                 GP04 =|  7   8 |= GP14 (TXD)
                  GND =|  9  10 |= GP15 (RXD)
-     [PWR LED]  GP17 =| 11  12 |= GP18 [CH BIT 0]
+    [12V RELAY]  GP17 =| 11  12 |= GP18 [CH BIT 0]
                 GP27 =| 13  14 |= GND
                 GP22 =| 15  16 |= GP23 [CH BIT 1]
                  3V3 =| 17  18 |= GP24 [CH BIT 2]
@@ -66,18 +67,35 @@ All input pins use internal pull-down resistors.
 | 20 | 38 | In | Bluetooth mode |
 | 21 | 40 | In | Power indicator |
 | 19 | 35 | In | Audio mode (LOW = mono [default], HIGH = stereo) |
-| 17 | 11 | Out | Power LED |
+| 17 | 11 | Out | Active-HIGH 12 V relay control |
 | 26 | 37 | Out | Bluetooth LED |
-| 13 | 33 | Out | Display backlight (MOSFET gate, on/off) |
+| 13 | 33 | Out | Display backlight (LEDA or BLK, on/off) |
 | 8  | 24 | Out | Display CS (SPI0 CE0) |
 | 11 | 23 | Out | Display SCLK (SPI0) |
 | 10 | 19 | Out | Display MOSI (SPI0 DIN) |
 | 27 | 13 | Out | Display D/C |
 | 22 | 15 | Out | Display RESET |
 
+### 12 V Relay, Amplifier, and Radio Lights
+
+GPIO 17 controls the relay module through its 3.3 V-compatible `IN` terminal. The relay is active HIGH. Its control side is powered from the Pi supply according to the relay module's rated VCC; connect control ground to Pi ground.
+
+The relay contacts switch a separate 12 V circuit:
+
+- 12 V positive → relay `COM`
+- relay `NO` → amplifier positive and radio-light positive (in parallel)
+- amplifier and radio-light negative → 12 V negative
+- Pi audio output (3.5 mm or HDMI audio path) → amplifier audio input
+
+The firmware boot configuration holds GPIO 17 as an output LOW (`gpio=17=op,dl`) so the active-HIGH relay stays off while Linux starts. The app then initializes it directly from the physical power input, avoiding an extra off/on pulse during app startup.
+
 ### Display Wiring
 
-Bare GC9A01 panel (14/15-pin variant). Backlight (LEDA) is switched by GPIO 13 through an N-channel MOSFET, so the panel goes dark when the radio is powered off.
+The radio supports either the existing bare GC9A01 panel or an 8-pin GC9A01 PCB module. Both use SPI0 and 3.3 V logic. The backlight is driven directly by GPIO 13 (active HIGH) and turns off automatically 20 seconds after the last user-visible event.
+
+Complete drawings are available in [`docs/radionette-wiring.pdf`](docs/radionette-wiring.pdf). The editable source is [`docs/radionette-wiring.vectorcraft`](docs/radionette-wiring.vectorcraft).
+
+#### Existing bare panel (14/15-pin variant)
 
 | Display pin | Display label | -> Pi BCM | -> Pi header pin |
 |---|---|---|------------------|
@@ -92,7 +110,22 @@ Bare GC9A01 panel (14/15-pin variant). Backlight (LEDA) is switched by GPIO 13 t
 | 9 | RESET | GPIO 22 | 15               |
 | 10-15 | TP-* | (touch — leave open) | —                |
 
-**Backlight switching:** N-channel MOSFET (e.g. 2N7000, AO3400) — gate to GPIO 13 (Pi pin 33), source to GND, drain to LEDK; LEDA stays on 3V3. Alternatively a P-channel high-side switch on the LEDA rail. The `backlight.ts` module drives the gate on/off (no PWM) with a 10 s auto-off after the last user-visible event (channel change, BT device connect). Stays on while in BT search mode.
+This table documents the radio as built: LEDA connects directly to GPIO 13 and LEDK connects to ground; there is no MOSFET. Verify the panel backlight current is within GPIO limits before duplicating this arrangement with a different bare panel.
+
+#### Optional 8-pin PCB module
+
+| Module label | -> Pi BCM | -> Pi header pin |
+|---|---|---|
+| GND | GND | 39 |
+| VCC | 3V3 | 1 |
+| SCL | GPIO 11 (SCLK) | 23 |
+| SDA | GPIO 10 (MOSI) | 19 |
+| RES | GPIO 22 | 15 |
+| DC | GPIO 27 | 13 |
+| CS | GPIO 8 (CE0) | 24 |
+| BLK | GPIO 13 | 33 |
+
+The 8-pin module must be a 2.8–3.3 V GC9A01 module. Its BLK input is assumed active HIGH, matching the existing backlight software. Do not connect a 5 V-only module directly to the Pi.
 
 ### Analog Tuner Wiring (AS5600 + ADS1115)
 
@@ -188,6 +221,13 @@ This builds the TypeScript, syncs everything to the Pi, starts the app via pm2, 
 - `npm run deploy:install` — force `npm install` on the Pi over the existing tree
 - `npm run deploy:refresh` — wipe `node_modules` on the Pi and reinstall from scratch
 
+With both radios on the network, select the destination explicitly:
+
+- `npm run deploy:minuett` — deploy to `pi@minuett.local`
+- `npm run deploy:radionette` — deploy to `pi@radionette.local`
+
+Both target commands accept the dependency flags, for example `npm run deploy:radionette -- --install` or `npm run deploy:minuett -- --refresh`. Plain `npm run deploy` targets Radionette. For initial setup, use `npm run setup-pi:minuett` or `npm run setup-pi:radionette`; plain `npm run setup-pi` also targets Radionette.
+
 ### 5. Verify
 
 - Open `http://radionette.local:8080/` in a browser — you should see the status page
@@ -244,9 +284,24 @@ When running on a machine without GPIO (e.g. your laptop), the app falls back to
 
 Some files contain settings specific to this setup that you'll want to adapt:
 
-- **`deploy.sh`** — The `REMOTE` variable is set to `radionette.local` (mDNS hostname). Change this to match your Pi's hostname or IP. The Node.js path is detected automatically.
+- **`deploy.sh`** — Targets Radionette by default. Set `RADIONETTE_REMOTE` to another SSH destination, or use the `deploy:minuett` / `deploy:radionette` npm commands. The Node.js path is detected automatically.
 - **`channels.json`** — Pre-configured with Norwegian radio stations (NRK, P4, etc.). Replace with your own station URLs.
 - **`src/bluetooth.ts`** — PulseAudio commands (`paplay`, `pactl`) run natively as the `pi` user. The `rfkill` command runs via `sudo`. No manual changes needed.
+
+### Per-radio band mapping
+
+Different physical selector switches can produce different top-nibble values. To override only the hardware mapping on one Pi without changing the shared `channels.json`, create `~/.radionette/band-mapping.json` on that Pi:
+
+```json
+{
+  "1": 0,
+  "2": 3,
+  "3": 1,
+  "4": 4
+}
+```
+
+Keys are logical band ordinals and values are the physical top-nibble readings (`0..15`). The override persists across deployments. Set `RADIONETTE_BAND_MAPPING` to use a different file path.
 
 ## Configuring Stations
 

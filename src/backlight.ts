@@ -1,9 +1,9 @@
 /**
  * Backlight controller for the GC9A01 panel.
  *
- * The display's LEDA rail is switched by an N-channel MOSFET whose gate is
- * driven by GPIO 13 (see gpio.ts and README.md). This module owns the pin
- * after gpio.ts has opened it.
+ * GPIO 13 drives the display backlight directly (LEDA on the existing bare
+ * panel, or BLK on the optional 8-pin PCB module). This module owns the pin
+ * after gpio.ts has opened it. HIGH = on, LOW = off.
  *
  * Behaviour:
  *   - Pure on/off — no dimming. (Software PWM was tried first and produced
@@ -55,7 +55,7 @@ function scheduleOff(): void {
   }, OFF_AFTER_MS);
 }
 
-/** Turn backlight on and (re)start the 10s auto-off timer. */
+/** Turn backlight on and (re)start the 20s auto-off timer. */
 function wake(): void {
   writePin(true);
   scheduleOff();

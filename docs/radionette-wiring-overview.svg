@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1680" height="1100" viewBox="0 0 1680 1100">
+  <title>Radionette Wiring</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <path id="Overview_background" data-name="Overview background" d="M0 0 L1680 0 L1680 1100 L0 1100 Z" fill="#f8fafc"/>
+    <path id="Overview_title_bar" data-name="Overview title bar" d="M0 0 L1680 0 L1680 96 L0 96 Z" fill="#0f172a"/>
+    <path id="Raspberry_Pi_block" data-name="Raspberry Pi block" d="M638 130 L1042 130 C1051.941 130 1060 138.059 1060 148 L1060 932 C1060 941.941 1051.941 950 1042 950 L638 950 C628.059 950 620 941.941 620 932 L620 148 C620 138.059 628.059 130 638 130 Z" fill="#ffffff" stroke="#2563eb" stroke-width="3" stroke-miterlimit="10"/>
+    <path id="Input_controls_block" data-name="Input controls block" d="M51 130 L539 130 C547.837 130 555 137.163 555 146 L555 569 C555 577.837 547.837 585 539 585 L51 585 C42.163 585 35 577.837 35 569 L35 146 C35 137.163 42.163 130 51 130 Z" fill="#ffffff" stroke="#94a3b8" stroke-width="2" stroke-miterlimit="10"/>
+    <path id="I2C_block" data-name="I2C block" d="M51 615 L539 615 C547.837 615 555 622.163 555 631 L555 994 C555 1002.837 547.837 1010 539 1010 L51 1010 C42.163 1010 35 1002.837 35 994 L35 631 C35 622.163 42.163 615 51 615 Z" fill="#ffffff" stroke="#0d9488" stroke-width="2" stroke-miterlimit="10"/>
+    <path id="Display_block" data-name="Display block" d="M1141 130 L1629 130 C1637.837 130 1645 137.163 1645 146 L1645 484 C1645 492.837 1637.837 500 1629 500 L1141 500 C1132.163 500 1125 492.837 1125 484 L1125 146 C1125 137.163 1132.163 130 1141 130 Z" fill="#ffffff" stroke="#7c3aed" stroke-width="2" stroke-miterlimit="10"/>
+    <path id="LED_outputs_block" data-name="LED outputs block" d="M1141 530 L1629 530 C1637.837 530 1645 537.163 1645 546 L1645 734 C1645 742.837 1637.837 750 1629 750 L1141 750 C1132.163 750 1125 742.837 1125 734 L1125 546 C1125 537.163 1132.163 530 1141 530 Z" fill="#ffffff" stroke="#2563eb" stroke-width="2" stroke-miterlimit="10"/>
+    <path id="Audio_power_block" data-name="Audio power block" d="M1141 780 L1629 780 C1637.837 780 1645 787.163 1645 796 L1645 994 C1645 1002.837 1637.837 1010 1629 1010 L1141 1010 C1132.163 1010 1125 1002.837 1125 994 L1125 796 C1125 787.163 1132.163 780 1141 780 Z" fill="#ffffff" stroke="#ea580c" stroke-width="2" stroke-miterlimit="10"/>
+    <path id="Switch_bank" data-name="Switch bank" d="M70 205 L520 205 C525.523 205 530 209.477 530 215 L530 480 C530 485.523 525.523 490 520 490 L70 490 C64.477 490 60 485.523 60 480 L60 215 C60 209.477 64.477 205 70 205 Z" fill="#f8fafc" stroke="#cbd5e1" stroke-miterlimit="10"/>
+    <path id="Input_note" data-name="Input note" d="M68 505 L522 505 C526.418 505 530 508.582 530 513 L530 552 C530 556.418 526.418 560 522 560 L68 560 C63.582 560 60 556.418 60 552 L60 513 C60 508.582 63.582 505 68 505 Z" fill="#eff6ff" stroke="#bfdbfe" stroke-miterlimit="10"/>
+    <path id="ADS1115" d="M70 680 L275 680 C280.523 680 285 684.477 285 690 L285 940 C285 945.523 280.523 950 275 950 L70 950 C64.477 950 60 945.523 60 940 L60 690 C60 684.477 64.477 680 70 680 Z" fill="#f0fdfa" stroke="#99f6e4" stroke-miterlimit="10"/>
+    <path id="AS5600" d="M315 680 L520 680 C525.523 680 530 684.477 530 690 L530 940 C530 945.523 525.523 950 520 950 L315 950 C309.477 950 305 945.523 305 940 L305 690 C305 684.477 309.477 680 315 680 Z" fill="#f0fdfa" stroke="#99f6e4" stroke-miterlimit="10"/>
+    <path id="Display_pins" data-name="Display pins" d="M1160 205 L1610 205 C1615.523 205 1620 209.477 1620 215 L1620 445 C1620 450.523 1615.523 455 1610 455 L1160 455 C1154.477 455 1150 450.523 1150 445 L1150 215 C1150 209.477 1154.477 205 1160 205 Z" fill="#faf5ff" stroke="#ddd6fe" stroke-miterlimit="10"/>
+    <path id="LED_circuits" data-name="LED circuits" d="M1160 600 L1610 600 C1615.523 600 1620 604.477 1620 610 L1620 705 C1620 710.523 1615.523 715 1610 715 L1160 715 C1154.477 715 1150 710.523 1150 705 L1150 610 C1150 604.477 1154.477 600 1160 600 Z" fill="#eff6ff" stroke="#bfdbfe" stroke-miterlimit="10"/>
+    <path id="Power" d="M1160 845 L1360 845 C1365.523 845 1370 849.477 1370 855 L1370 965 C1370 970.523 1365.523 975 1360 975 L1160 975 C1154.477 975 1150 970.523 1150 965 L1150 855 C1150 849.477 1154.477 845 1160 845 Z" fill="#fff7ed" stroke="#fed7aa" stroke-miterlimit="10"/>
+    <path id="Audio" d="M1400 845 L1610 845 C1615.523 845 1620 849.477 1620 855 L1620 965 C1620 970.523 1615.523 975 1610 975 L1400 975 C1394.477 975 1390 970.523 1390 965 L1390 855 C1390 849.477 1394.477 845 1400 845 Z" fill="#fff7ed" stroke="#fed7aa" stroke-miterlimit="10"/>
+    <path id="Pi_left_pin_column" data-name="Pi left pin column" d="M660 205 L820 205 C825.523 205 830 209.477 830 215 L830 890 C830 895.523 825.523 900 820 900 L660 900 C654.477 900 650 895.523 650 890 L650 215 C650 209.477 654.477 205 660 205 Z" fill="#eff6ff" stroke="#bfdbfe" stroke-miterlimit="10"/>
+    <path id="Pi_right_pin_column" data-name="Pi right pin column" d="M860 205 L1020 205 C1025.523 205 1030 209.477 1030 215 L1030 890 C1030 895.523 1025.523 900 1020 900 L860 900 C854.477 900 850 895.523 850 890 L850 215 C850 209.477 854.477 205 860 205 Z" fill="#f8fafc" stroke="#cbd5e1" stroke-miterlimit="10"/>
+    <path id="Input_bus" data-name="Input bus" d="M530 300 L590 300 L590 360 L650 360" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="I2C_SDA" data-name="I2C SDA" d="M530 745 L585 745 L585 700 L650 700" fill="none" stroke="#0d9488" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="I2C_SCL" data-name="I2C SCL" d="M530 780 L595 780 L595 735 L650 735" fill="none" stroke="#0891b2" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="SPI_bus" data-name="SPI bus" d="M1030 420 L1090 420 L1090 300 L1150 300" fill="none" stroke="#7c3aed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="LED_GPIO_bus" data-name="LED GPIO bus" d="M1030 600 L1090 600 L1090 650 L1150 650" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="Power_rail" data-name="Power rail" d="M1030 835 L1095 835 L1095 910 L1150 910" fill="none" stroke="#dc2626" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="Audio_path" data-name="Audio path" d="M1030 870 L1380 870 L1380 910 L1390 910" fill="none" stroke="#ea580c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <text transform="matrix(1 0 0 1 40 61)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="30" fill="#ffffff"><tspan x="0" y="0">RADIONETTE — COMPLETE WIRING OVERVIEW</tspan></text>
+    <text transform="matrix(1 0 0 1 40 84)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#cbd5e1"><tspan x="0" y="0">Raspberry Pi 4 • BCM numbering • 3.3 V logic</tspan></text>
+    <text transform="matrix(1 0 0 1 650 174)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="22" fill="#1d4ed8"><tspan x="0" y="0">RASPBERRY PI 4 — 40 PIN HEADER</tspan></text>
+    <text transform="matrix(1 0 0 1 60 174)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="22" fill="#334155"><tspan x="0" y="0">INPUT CONTROLS</tspan></text>
+    <text transform="matrix(1 0 0 1 60 659)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="22" fill="#0f766e"><tspan x="0" y="0">SHARED I²C BUS 1</tspan></text>
+    <text transform="matrix(1 0 0 1 1150 174)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="22" fill="#6d28d9"><tspan x="0" y="0">GC9A01 ROUND DISPLAY — SPI0</tspan></text>
+    <text transform="matrix(1 0 0 1 1150 574)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="22" fill="#1d4ed8"><tspan x="0" y="0">RELAY + INDICATOR OUTPUTS</tspan></text>
+    <text transform="matrix(1 0 0 1 1150 824)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="22" fill="#c2410c"><tspan x="0" y="0">POWER + AUDIO</tspan></text>
+    <text transform="matrix(1 0 0 1 80 238)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="16" fill="#0f172a"><tspan x="0" y="0">Contact / switch</tspan></text>
+    <text transform="matrix(1 0 0 1 300 238)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="16" fill="#0f172a"><tspan x="0" y="0">Pi input</tspan></text>
+    <text transform="matrix(1 0 0 1 430 238)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="16" fill="#0f172a"><tspan x="0" y="0">Physical</tspan></text>
+    <text transform="matrix(1 0 0 1 80 268)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">Channel bit 0</tspan></text>
+    <text transform="matrix(1 0 0 1 300 268)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#2563eb"><tspan x="0" y="0">BCM 18</tspan></text>
+    <text transform="matrix(1 0 0 1 430 268)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">pin 12</tspan></text>
+    <text transform="matrix(1 0 0 1 80 287)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">Channel bit 1</tspan></text>
+    <text transform="matrix(1 0 0 1 300 287)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#2563eb"><tspan x="0" y="0">BCM 23</tspan></text>
+    <text transform="matrix(1 0 0 1 430 287)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">pin 16</tspan></text>
+    <text transform="matrix(1 0 0 1 80 306)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">Channel bit 2</tspan></text>
+    <text transform="matrix(1 0 0 1 300 306)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#2563eb"><tspan x="0" y="0">BCM 24</tspan></text>
+    <text transform="matrix(1 0 0 1 430 306)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">pin 18</tspan></text>
+    <text transform="matrix(1 0 0 1 80 325)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">Channel bit 3</tspan></text>
+    <text transform="matrix(1 0 0 1 300 325)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#2563eb"><tspan x="0" y="0">BCM 25</tspan></text>
+    <text transform="matrix(1 0 0 1 430 325)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">pin 22</tspan></text>
+    <text transform="matrix(1 0 0 1 80 344)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">Channel bit 4</tspan></text>
+    <text transform="matrix(1 0 0 1 300 344)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#2563eb"><tspan x="0" y="0">BCM 5</tspan></text>
+    <text transform="matrix(1 0 0 1 430 344)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">pin 29</tspan></text>
+    <text transform="matrix(1 0 0 1 80 363)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">Channel bit 5</tspan></text>
+    <text transform="matrix(1 0 0 1 300 363)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#2563eb"><tspan x="0" y="0">BCM 7</tspan></text>
+    <text transform="matrix(1 0 0 1 430 363)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">pin 26</tspan></text>
+    <text transform="matrix(1 0 0 1 80 382)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">Channel bit 6</tspan></text>
+    <text transform="matrix(1 0 0 1 300 382)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#2563eb"><tspan x="0" y="0">BCM 12</tspan></text>
+    <text transform="matrix(1 0 0 1 430 382)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">pin 32</tspan></text>
+    <text transform="matrix(1 0 0 1 80 401)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">Channel bit 7</tspan></text>
+    <text transform="matrix(1 0 0 1 300 401)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#2563eb"><tspan x="0" y="0">BCM 16</tspan></text>
+    <text transform="matrix(1 0 0 1 430 401)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">pin 36</tspan></text>
+    <text transform="matrix(1 0 0 1 80 420)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">Bluetooth mode</tspan></text>
+    <text transform="matrix(1 0 0 1 300 420)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#2563eb"><tspan x="0" y="0">BCM 20</tspan></text>
+    <text transform="matrix(1 0 0 1 430 420)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">pin 38</tspan></text>
+    <text transform="matrix(1 0 0 1 80 439)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">Power sense</tspan></text>
+    <text transform="matrix(1 0 0 1 300 439)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#2563eb"><tspan x="0" y="0">BCM 21</tspan></text>
+    <text transform="matrix(1 0 0 1 430 439)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">pin 40</tspan></text>
+    <text transform="matrix(1 0 0 1 80 458)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">Stereo select</tspan></text>
+    <text transform="matrix(1 0 0 1 300 458)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#2563eb"><tspan x="0" y="0">BCM 19</tspan></text>
+    <text transform="matrix(1 0 0 1 430 458)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">pin 35</tspan></text>
+    <text transform="matrix(1 0 0 1 80 520)" x="0" y="12.594" xml:space="preserve" font-family="Inter" font-size="13" fill="#1e3a8a"><tspan x="0" y="12.594">Each active contact connects its GPIO to 3.3 V. Software enables an</tspan><tspan x="0" y="28.194">internal pull-down. LOW = inactive; stereo input LOW selects mono.</tspan></text>
+    <text transform="matrix(1 0 0 1 80 714)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="17" fill="#0f766e"><tspan x="0" y="0">ADS1115 — address 0x48</tspan></text>
+    <text transform="matrix(1 0 0 1 80 742)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">VDD → 3V3 (pin 1 or 17)</tspan></text>
+    <text transform="matrix(1 0 0 1 80 765)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">GND → Pi GND</tspan></text>
+    <text transform="matrix(1 0 0 1 80 788)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f766e"><tspan x="0" y="0">SDA → BCM 2 / pin 3</tspan></text>
+    <text transform="matrix(1 0 0 1 80 811)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0891b2"><tspan x="0" y="0">SCL → BCM 3 / pin 5</tspan></text>
+    <text transform="matrix(1 0 0 1 80 834)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">ADDR → GND</tspan></text>
+    <text transform="matrix(1 0 0 1 80 857)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#c2410c"><tspan x="0" y="0">AIN0 → volume pot wiper</tspan></text>
+    <text transform="matrix(1 0 0 1 80 880)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">AIN1–3 → not connected</tspan></text>
+    <text transform="matrix(1 0 0 1 80 914)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#c2410c"><tspan x="0" y="0">Pot outer pins: 3V3 ↔ GND</tspan></text>
+    <text transform="matrix(1 0 0 1 325 714)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="17" fill="#0f766e"><tspan x="0" y="0">AS5600 — address 0x36</tspan></text>
+    <text transform="matrix(1 0 0 1 325 742)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">VDD → shared 3V3</tspan></text>
+    <text transform="matrix(1 0 0 1 325 765)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">GND → shared GND</tspan></text>
+    <text transform="matrix(1 0 0 1 325 788)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f766e"><tspan x="0" y="0">SDA → BCM 2 / pin 3</tspan></text>
+    <text transform="matrix(1 0 0 1 325 811)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0891b2"><tspan x="0" y="0">SCL → BCM 3 / pin 5</tspan></text>
+    <text transform="matrix(1 0 0 1 325 834)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">DIR → GND</tspan></text>
+    <text transform="matrix(1 0 0 1 325 857)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">OUT → not connected</tspan></text>
+    <text transform="matrix(1 0 0 1 325 880)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">PGO → not connected</tspan></text>
+    <text transform="matrix(1 0 0 1 325 910)" x="0" y="11.625" xml:space="preserve" font-family="Inter" font-size="12" fill="#334155"><tspan x="0" y="11.625">Diametric magnet 0.5–3 mm</tspan><tspan x="0" y="26.025">above sensor on tuning shaft.</tspan></text>
+    <text transform="matrix(1 0 0 1 670 238)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="16" fill="#1d4ed8"><tspan x="0" y="0">BUS / DISPLAY</tspan></text>
+    <text transform="matrix(1 0 0 1 670 272)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">3V3     pin 1 / 17</tspan></text>
+    <text transform="matrix(1 0 0 1 670 306)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">GND     any GND pin</tspan></text>
+    <text transform="matrix(1 0 0 1 670 340)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">SDA1    BCM 2  pin 3</tspan></text>
+    <text transform="matrix(1 0 0 1 670 374)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">SCL1    BCM 3  pin 5</tspan></text>
+    <text transform="matrix(1 0 0 1 670 408)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">SPI CE0 BCM 8  pin 24</tspan></text>
+    <text transform="matrix(1 0 0 1 670 442)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">SPI MOSI BCM 10 pin 19</tspan></text>
+    <text transform="matrix(1 0 0 1 670 476)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">SPI SCLK BCM 11 pin 23</tspan></text>
+    <text transform="matrix(1 0 0 1 670 510)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">Display DC BCM 27 pin 13</tspan></text>
+    <text transform="matrix(1 0 0 1 670 544)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">Display RST BCM 22 pin 15</tspan></text>
+    <text transform="matrix(1 0 0 1 670 578)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">Backlight BCM 13 pin 33</tspan></text>
+    <text transform="matrix(1 0 0 1 670 612)" xml:space="preserve" font-family="Inter" font-size="14" fill="#ffffff"></text>
+    <text transform="matrix(1 0 0 1 670 646)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">Audio: 3.5 mm / HDMI</tspan></text>
+    <text transform="matrix(1 0 0 1 670 680)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">Network: Wi-Fi + BT</tspan></text>
+    <text transform="matrix(1 0 0 1 870 238)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="16" fill="#334155"><tspan x="0" y="0">GPIO CONTROL</tspan></text>
+    <text transform="matrix(1 0 0 1 870 272)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">CH0  BCM18  pin12</tspan></text>
+    <text transform="matrix(1 0 0 1 870 306)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">CH1  BCM23  pin16</tspan></text>
+    <text transform="matrix(1 0 0 1 870 340)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">CH2  BCM24  pin18</tspan></text>
+    <text transform="matrix(1 0 0 1 870 374)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">CH3  BCM25  pin22</tspan></text>
+    <text transform="matrix(1 0 0 1 870 408)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">CH4  BCM5   pin29</tspan></text>
+    <text transform="matrix(1 0 0 1 870 442)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">CH5  BCM7   pin26</tspan></text>
+    <text transform="matrix(1 0 0 1 870 476)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">CH6  BCM12  pin32</tspan></text>
+    <text transform="matrix(1 0 0 1 870 510)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">CH7  BCM16  pin36</tspan></text>
+    <text transform="matrix(1 0 0 1 870 544)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">BT   BCM20  pin38</tspan></text>
+    <text transform="matrix(1 0 0 1 870 578)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">PWR  BCM21  pin40</tspan></text>
+    <text transform="matrix(1 0 0 1 870 612)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"><tspan x="0" y="0">MODE BCM19  pin35</tspan></text>
+    <text transform="matrix(1 0 0 1 870 646)" xml:space="preserve" font-family="Inter" font-size="14" fill="#334155"></text>
+    <text transform="matrix(1 0 0 1 870 680)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#1d4ed8"><tspan x="0" y="0">12V RELAY BCM17 pin11</tspan></text>
+    <text transform="matrix(1 0 0 1 870 714)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#1d4ed8"><tspan x="0" y="0">BT LED  BCM26 pin37</tspan></text>
+    <text transform="matrix(1 0 0 1 670 820)" x="0" y="13.562" xml:space="preserve" font-family="Inter" font-size="14" fill="#991b1b"><tspan x="0" y="13.562">All logic is 3.3 V. Never apply 5 V to GPIO, I²C,</tspan><tspan x="0" y="30.363">SPI, or control inputs.</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 238)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="15" fill="#0f172a"><tspan x="0" y="0">Signal</tspan></text>
+    <text transform="matrix(1 0 0 1 1320 238)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="15" fill="#0f172a"><tspan x="0" y="0">Pi</tspan></text>
+    <text transform="matrix(1 0 0 1 1495 238)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="15" fill="#0f172a"><tspan x="0" y="0">Function</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 270)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">CS</tspan></text>
+    <text transform="matrix(1 0 0 1 1320 270)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#6d28d9"><tspan x="0" y="0">BCM 8 / 24</tspan></text>
+    <text transform="matrix(1 0 0 1 1495 270)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">SPI CE0</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 294)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">SCL</tspan></text>
+    <text transform="matrix(1 0 0 1 1320 294)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#6d28d9"><tspan x="0" y="0">BCM 11 / 23</tspan></text>
+    <text transform="matrix(1 0 0 1 1495 294)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">SPI clock</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 318)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">SDA</tspan></text>
+    <text transform="matrix(1 0 0 1 1320 318)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#6d28d9"><tspan x="0" y="0">BCM 10 / 19</tspan></text>
+    <text transform="matrix(1 0 0 1 1495 318)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">SPI MOSI</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 342)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">DC</tspan></text>
+    <text transform="matrix(1 0 0 1 1320 342)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#6d28d9"><tspan x="0" y="0">BCM 27 / 13</tspan></text>
+    <text transform="matrix(1 0 0 1 1495 342)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">data / command</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 366)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">RES</tspan></text>
+    <text transform="matrix(1 0 0 1 1320 366)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#6d28d9"><tspan x="0" y="0">BCM 22 / 15</tspan></text>
+    <text transform="matrix(1 0 0 1 1495 366)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">reset</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 390)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">Backlight</tspan></text>
+    <text transform="matrix(1 0 0 1 1320 390)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#6d28d9"><tspan x="0" y="0">BCM 13 / 33</tspan></text>
+    <text transform="matrix(1 0 0 1 1495 390)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">active HIGH</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 414)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">VCC</tspan></text>
+    <text transform="matrix(1 0 0 1 1320 414)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#6d28d9"><tspan x="0" y="0">3V3 / pin 1</tspan></text>
+    <text transform="matrix(1 0 0 1 1495 414)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">2.8–3.3 V</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 438)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">GND</tspan></text>
+    <text transform="matrix(1 0 0 1 1320 438)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#6d28d9"><tspan x="0" y="0">GND</tspan></text>
+    <text transform="matrix(1 0 0 1 1495 438)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">common</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 468)" x="0" y="12.594" xml:space="preserve" font-family="Inter" font-size="13" fill="#6d28d9"><tspan x="0" y="12.594">Use either display variant shown on page 2 — not both.</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 632)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#1d4ed8"><tspan x="0" y="0">GPIO 17 / pin 11 → relay module IN (active HIGH)</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 670)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="14" fill="#1d4ed8"><tspan x="0" y="0">GPIO 26 / pin 37 → resistor* → Bluetooth LED → GND</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 704)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="12" fill="#64748b"><tspan x="0" y="0">Relay control side is powered by the Pi; contacts switch the separate 12 V supply.</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 878)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="15" fill="#c2410c"><tspan x="0" y="0">Pi supply + GND → relay module</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 906)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">GPIO 17 → IN (active HIGH)</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 934)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#dc2626"><tspan x="0" y="0">Relay COM ← separate 12 V +</tspan></text>
+    <text transform="matrix(1 0 0 1 1170 960)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#475569"><tspan x="0" y="0">Relay NO → amp + radio lights</tspan></text>
+    <text transform="matrix(1 0 0 1 1410 878)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="15" fill="#c2410c"><tspan x="0" y="0">Switched 12 V from relay NO</tspan></text>
+    <text transform="matrix(1 0 0 1 1410 906)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">→ amplifier + radio lights</tspan></text>
+    <text transform="matrix(1 0 0 1 1410 934)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">Pi audio output → amplifier input</tspan></text>
+    <text transform="matrix(1 0 0 1 1410 956)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">12 V − → amp/lights return</tspan></text>
+    <text transform="matrix(1 0 0 1 548 286)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="11" fill="#2563eb"><tspan x="0" y="0">11 × GPIO</tspan></text>
+    <text transform="matrix(1 0 0 1 548 728)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="11" fill="#0f766e"><tspan x="0" y="0">SDA</tspan></text>
+    <text transform="matrix(1 0 0 1 548 813)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="11" fill="#0891b2"><tspan x="0" y="0">SCL</tspan></text>
+    <text transform="matrix(1 0 0 1 1068 286)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="11" fill="#7c3aed"><tspan x="0" y="0">SPI</tspan></text>
+    <text transform="matrix(1 0 0 1 1067 640)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="11" fill="#2563eb"><tspan x="0" y="0">GPIO</tspan></text>
+  </g>
+</svg>

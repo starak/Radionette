@@ -6,6 +6,8 @@
   "scripts": {
     "build": "tsc",
     "deploy": "./deploy.sh",
+    "deploy:minuett": "RADIONETTE_REMOTE=pi@minuett.local ./deploy.sh",
+    "deploy:radionette": "RADIONETTE_REMOTE=pi@radionette.local ./deploy.sh",
     "deploy:install": "./deploy.sh --install",
     "deploy:refresh": "./deploy.sh --refresh",
     "dev": "tsc --watch",
@@ -13,7 +15,9 @@
     "smoke-display": "node dist/scripts/display-smoke.js",
     "render-test": "node dist/scripts/display-render-test.js",
     "as5600-monitor": "node dist/scripts/as5600-monitor.js",
-    "setup-pi": "ssh pi@radionette.local 'bash -s' < setup-pi.sh"
+    "setup-pi": "ssh pi@radionette.local 'bash -s' < setup-pi.sh",
+    "setup-pi:minuett": "ssh pi@minuett.local 'bash -s' < setup-pi.sh",
+    "setup-pi:radionette": "ssh pi@radionette.local 'bash -s' < setup-pi.sh"
   },
   "license": "MIT",
   "dependencies": {
