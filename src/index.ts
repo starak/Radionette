@@ -1,6 +1,8 @@
 import consolestamp from "console-stamp";
 import { loadChannels } from "./channels";
 import { loadDisplayMapping } from "./display-settings";
+import { loadDisplayPreferences } from "./display-preferences";
+import { loadSettingsSecurity } from "./settings-security";
 import { initPlayer, stopPlayer } from "./player";
 import { initBluetooth, stopBluetooth } from "./bluetooth";
 import { initHotspotAlert, stopHotspotAlert } from "./hotspot-alert";
@@ -35,6 +37,8 @@ console.log("Starting up...\n");
 
 // 1. Load per-radio display wiring and channel configuration
 loadDisplayMapping();
+loadDisplayPreferences();
+loadSettingsSecurity();
 loadChannels();
 
 // 2. Initialize player (subscribes to state events)

@@ -265,6 +265,20 @@ export async function setVolumeSoftware(paPercent: number): Promise<void> {
   console.log(`[Volume] Software override: ${clamped}%`);
 }
 
+/** Immediately discard a software debug override and apply the pot position. */
+export async function resetVolumeToPhysical(): Promise<void> {
+  if (devMode) return;
+  const raw = readAdcChannel(ADC_MUX_AIN0);
+  if (raw === null) throw new Error("Could not read the physical volume potentiometer");
+  rawHistory.length = 0;
+  for (let i = 0; i < SMOOTH_WINDOW; i++) rawHistory.push(raw);
+  const percent = rawToPercent(raw);
+  lastAppliedPercent = percent;
+  radioState.setVolume(applyCurve(percent));
+  await setAllSinksVolume(percent);
+  console.log(`[Volume] Reset to physical pot: raw=${raw} (${percent}%)`);
+}
+
 export function stopVolume(): void {
   if (pollTimer) {
     clearInterval(pollTimer);

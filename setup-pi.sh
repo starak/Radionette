@@ -72,13 +72,7 @@ sudo apt-get install -y -qq \
   pulseaudio-module-bluetooth \
   i2c-tools \
   build-essential \
-  python3 \
-  pkg-config \
-  libcairo2-dev \
-  libpango1.0-dev \
-  libjpeg-dev \
-  libgif-dev \
-  librsvg2-dev
+  python3
 ok "System packages installed"
 
 # ---------- 2. Enable SPI + I2C in /boot/firmware/config.txt ----------

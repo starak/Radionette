@@ -107,6 +107,8 @@ const rawHistory: number[] = [];
 
 let lastAppliedChannelId: string | null = null;
 let lastCommittedFraction: number | null = null;
+let channelOverride: ChannelInfo | null = null;
+let channelOverrideFraction: number | null = null;
 
 /**
  * Current band ordinal (from channels.json). 0 means "no band" — either
@@ -340,6 +342,22 @@ function pollTuner(): void {
 
   radioState.setTuner(fraction, Math.round(smoothed), currentBand);
 
+  // A debug-page channel selection temporarily wins over the physical needle.
+  // Resume physical tuning once the needle moves a meaningful distance.
+  if (channelOverride) {
+    if (
+      channelOverrideFraction === null ||
+      Math.abs(fraction - channelOverrideFraction) < 0.02
+    ) {
+      return;
+    }
+    console.log(`[Tuner] Physical needle moved — clearing channel override (${channelOverride.name})`);
+    channelOverride = null;
+    channelOverrideFraction = null;
+    lastAppliedChannelId = null;
+    lastCommittedFraction = null;
+  }
+
   if (rawHistory.length < SMOOTH_WINDOW) return;
 
   if (
@@ -401,8 +419,25 @@ export function setTunerBand(bandOrdinal: number): void {
   const b = bandOrdinal | 0;
   if (b === currentBand) return;
   currentBand = b;
+  channelOverride = null;
+  channelOverrideFraction = null;
   lastAppliedChannelId = null;
   lastCommittedFraction = null;
+}
+
+export function setTunerChannelOverride(channel: ChannelInfo | null): void {
+  channelOverride = channel;
+  channelOverrideFraction = channel ? radioState.state.tunerFraction : null;
+  lastAppliedChannelId = channel?.id ?? null;
+  lastCommittedFraction = channel ? radioState.state.tunerFraction : null;
+  if (channel) {
+    console.log(`[Tuner] Debug channel override → ${channel.id} (${channel.name})`);
+    radioState.setChannel(channel);
+  } else {
+    console.log("[Tuner] Debug channel override cleared");
+    lastAppliedChannelId = null;
+    lastCommittedFraction = null;
+  }
 }
 
 /**
@@ -444,6 +479,7 @@ export function tunerStatus(): {
   fraction: number | null;
   band: number;
   channelsInBand: Array<{ id: string; name: string; order: number }>;
+  channelOverride: string | null;
 } {
   const channels = channelsForBand(currentBand);
   return {
@@ -457,6 +493,7 @@ export function tunerStatus(): {
       name: c.name,
       order: c.order,
     })),
+    channelOverride: channelOverride?.id ?? null,
   };
 }
 
@@ -533,6 +570,8 @@ export function initTuner(): void {
   // Same story for mode:bluetooth — state.channel is cleared to null
   // on BT enter, so returning to radio would otherwise strand us.
   const resetCommit = (): void => {
+    channelOverride = null;
+    channelOverrideFraction = null;
     lastAppliedChannelId = null;
     lastCommittedFraction = null;
   };

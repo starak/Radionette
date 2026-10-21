@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0e13"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Radionette — WiFi Settings</title>
   <style>
     :root {
@@ -70,7 +71,7 @@
       border-radius: 12px;
       padding: 1.5rem 2rem;
       width: 100%;
-      max-width: 480px;
+      max-width: 1080px;
       margin-bottom: 1rem;
       border: 1px solid var(--border);
     }
@@ -313,14 +314,15 @@
     .toast.success { background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent); }
     .toast.error { background: var(--red-bg); color: var(--red); border: 1px solid var(--red); }
   </style>
+  <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-  <h1><a href="/">RADIONETTE</a></h1>
-  <nav class="tabs">
+  <header class="app-header"><a class="brand" href="/">RADIONETTE</a><div class="brand-sub">Network</div><nav class="tabs">
     <a href="/" class="tab">Status</a>
     <a href="/wifi" class="tab active">WiFi</a>
     <a href="/debug" class="tab">Debug</a>
-  </nav>
+    <a href="/settings" class="tab">Settings</a>
+  </nav></header>
 
   <!-- Connection status -->
   <div class="card" id="status-card">

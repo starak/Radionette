@@ -1,6 +1,5 @@
 import * as fs from "fs";
-import * as os from "os";
-import * as path from "path";
+import { radionetteConfigPath, removeJsonFileWithBackup, writeJsonAtomic } from "./config-storage";
 
 export type DisplayMode =
   | "auto-artwork"
@@ -20,7 +19,7 @@ export interface DisplaySetting {
   backlight: BacklightPolicy;
 }
 
-interface DisplayMappingFile {
+export interface DisplayMappingFile {
   autoArtwork: number;
   autoLogo: number;
   alwaysArtwork: number;
@@ -64,7 +63,7 @@ export function loadDisplayMapping(configPath?: string): void {
   mappingPath =
     configPath ||
     process.env.RADIONETTE_DISPLAY_MAPPING ||
-    path.join(os.homedir(), ".radionette", "display-mapping.json");
+    radionetteConfigPath("display-mapping.json");
 
   mapping = null;
   if (!fs.existsSync(mappingPath)) {
@@ -75,15 +74,8 @@ export function loadDisplayMapping(configPath?: string): void {
   }
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(mappingPath, "utf-8")) as Partial<DisplayMappingFile>;
-    const values = DEFINITIONS.map((definition) => parsed[definition.key]);
-    if (values.some((value) => !Number.isInteger(value) || value! < 0 || value! > 15)) {
-      throw new Error("every display mapping value must be a whole number from 0 to 15");
-    }
-    if (new Set(values).size !== values.length) {
-      throw new Error("display mapping values must be unique");
-    }
-    mapping = parsed as DisplayMappingFile;
+    const parsed = JSON.parse(fs.readFileSync(mappingPath, "utf-8"));
+    mapping = validateDisplayMapping(parsed);
     console.log(
       `[DisplaySettings] Loaded ${mappingPath}: ${getDisplayOptions()
         .map((option) => `${option.mode}=0x${option.bits.toString(16)}`)
@@ -93,6 +85,44 @@ export function loadDisplayMapping(configPath?: string): void {
     console.error(`[DisplaySettings] Invalid mapping ${mappingPath}:`, err);
     console.warn("[DisplaySettings] Falling back to normal auto/artwork mode");
   }
+}
+
+export function validateDisplayMapping(value: any): DisplayMappingFile {
+  const parsed = value as Partial<DisplayMappingFile>;
+  const values = DEFINITIONS.map((definition) => parsed?.[definition.key]);
+  if (values.some((entry) => !Number.isInteger(entry) || entry! < 0 || entry! > 15)) {
+    throw new Error("every display mapping value must be a whole number from 0 to 15");
+  }
+  if (new Set(values).size !== values.length) {
+    throw new Error("display mapping values must be unique");
+  }
+  return Object.fromEntries(
+    DEFINITIONS.map((definition) => [definition.key, parsed[definition.key]]),
+  ) as unknown as DisplayMappingFile;
+}
+
+export function saveDisplayMapping(value: unknown): DisplayMappingFile {
+  const validated = validateDisplayMapping(value);
+  const filePath =
+    process.env.RADIONETTE_DISPLAY_MAPPING ||
+    radionetteConfigPath("display-mapping.json");
+  writeJsonAtomic(filePath, validated);
+  mapping = validated;
+  mappingPath = filePath;
+  return { ...validated };
+}
+
+export function getDisplayMapping(): DisplayMappingFile | null {
+  return mapping ? { ...mapping } : null;
+}
+
+export function clearDisplayMapping(): void {
+  const filePath =
+    process.env.RADIONETTE_DISPLAY_MAPPING ||
+    radionetteConfigPath("display-mapping.json");
+  removeJsonFileWithBackup(filePath);
+  mapping = null;
+  mappingPath = filePath;
 }
 
 export function resolveDisplaySetting(bits: number): DisplaySetting {

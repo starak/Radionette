@@ -139,7 +139,7 @@ function onDisplayMode(setting: DisplaySetting): void {
 /**
  * External lock — keeps the backlight on indefinitely until released.
  * Used by the debug page logo-override so the test grid is always visible.
- * Independent of brightLocked (BT search) so neither overrides the other.
+ * Main radio power-off still wins over this temporary override.
  */
 export function setBacklightOverrideLock(locked: boolean): void {
   overrideLocked = locked;

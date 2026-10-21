@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b0e13"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Radionette Settings</title>
+  <style>
+    :root { --bg:#0d1117; --card:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#f0883e; --good:#3fb950; --bad:#f85149; }
+    * { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--text); font:15px system-ui,sans-serif }
+    nav { padding:.8rem 1rem; border-bottom:1px solid var(--line); display:flex; gap:1rem; flex-wrap:wrap } nav a { color:var(--muted); text-decoration:none } nav a.active { color:var(--accent) }
+    main { max-width:1080px; margin:auto; padding:1rem } h1 { margin:.4rem 0 1rem } h2 { color:var(--accent); margin-top:0 }
+    .warning { padding:.8rem; border:1px solid #9e6a03; background:#2d2207; border-radius:8px; margin-bottom:1rem }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:1rem; margin-bottom:1rem; overflow:auto }
+    table { width:100%; border-collapse:collapse; min-width:700px } th,td { border-bottom:1px solid var(--line); padding:.45rem; text-align:left; vertical-align:top }
+    input,select { width:100%; color:var(--text); background:#0d1117; border:1px solid var(--line); border-radius:5px; padding:.45rem }
+    input[type=range] { padding:0 } button,.button { color:var(--text); background:#21262d; border:1px solid var(--line); border-radius:6px; padding:.48rem .75rem; cursor:pointer }
+    button:hover,.button:hover { border-color:var(--accent) } button.primary { background:#9e4f16; border-color:var(--accent) } button.danger { color:#ffb4ae }
+    .actions { display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.8rem; align-items:center }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:1rem }
+    .field { display:grid; grid-template-columns:1fr 90px auto; align-items:center; gap:.5rem; margin:.5rem 0 }
+    .tint { display:grid; grid-template-columns:25px 1fr 55px; gap:.5rem; margin:.6rem 0; align-items:center }
+    small,.muted { color:var(--muted) } #toast { position:fixed; right:1rem; bottom:1rem; max-width:420px; padding:.8rem 1rem; border-radius:8px; display:none; box-shadow:0 4px 20px #0008 }
+    #toast.good { display:block; background:#153d20; border:1px solid var(--good) } #toast.bad { display:block; background:#4a1818; border:1px solid var(--bad) }
+  </style>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="app-header"><a class="brand" href="/">RADIONETTE</a><div class="brand-sub">Configuration</div><nav class="tabs"><a class="tab" href="/">Status</a><a class="tab" href="/wifi">WiFi</a><a class="tab" href="/debug">Debug</a><a class="tab active" href="/settings">Settings</a></nav></header>
+  <main>
+    <h1>Settings</h1>
+    <div class="card">
+      <h2>Bands</h2>
+      <table><thead><tr><th style="width:90px">Ordinal</th><th>Name</th><th style="width:90px"></th></tr></thead><tbody id="bands"></tbody></table>
+      <div class="actions"><button onclick="addBand()">Add band</button></div>
+    </div>
+
+    <div class="card">
+      <h2>Stations</h2>
+      <table><thead><tr><th>ID</th><th>Name</th><th style="width:100px">Band</th><th style="width:85px">Order</th><th>Stream URL</th><th>Logo filename</th><th></th></tr></thead><tbody id="channels"></tbody></table>
+      <div class="actions"><button onclick="addChannel()">Add station</button><button class="primary" onclick="saveStations()">Save bands and stations</button></div>
+      <small>A missing logo filename uses the generated text-tile logo. Saves are local to this radio and survive deployments.</small>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Band hardware mapping</h2>
+        <div id="band-mapping"></div>
+        <div class="actions"><button class="primary" onclick="saveBandMapping()">Save band mapping</button></div>
+        <small>Capture uses the current top nibble: <b id="current-top">—</b>.</small>
+      </div>
+
+      <div class="card">
+        <h2>Display hardware mapping</h2>
+        <div id="display-mapping"></div>
+        <div class="actions"><button class="primary" onclick="saveDisplayMapping()">Save display mapping</button></div>
+        <small>Capture uses the current lower nibble: <b id="current-low">—</b>. All five values must be unique.</small>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Default display tint</h2>
+      <div class="tint"><b>R</b><input id="tint-r" type="range" min="0" max="2" step=".01" oninput="showTint()"><span id="tint-r-v"></span></div>
+      <div class="tint"><b>G</b><input id="tint-g" type="range" min="0" max="2" step=".01" oninput="showTint()"><span id="tint-g-v"></span></div>
+      <div class="tint"><b>B</b><input id="tint-b" type="range" min="0" max="2" step=".01" oninput="showTint()"><span id="tint-b-v"></span></div>
+      <div class="actions">
+        <button onclick="setTint(1,1,1)">Neutral</button><button onclick="setTint(1.05,.9,.7)">Warm</button><button onclick="setTint(1.1,.75,.5)">Retro</button><button onclick="setTint(1.15,.6,.3)">Ember</button>
+        <button class="primary" onclick="saveTint()">Save as default</button>
+      </div>
+      <small>Saving repaints immediately and makes the tint persistent across restarts.</small>
+    </div>
+
+    <div class="card">
+      <h2>Backup and restore</h2>
+      <div class="actions">
+        <a class="button" href="/api/settings/export">Export settings</a>
+        <input id="import-file" type="file" accept="application/json,.json" style="max-width:340px">
+        <button class="danger" onclick="importSettings()">Validate and import</button>
+      </div>
+      <small>Every save keeps a <code>.bak</code> copy beside the previous configuration. Imports are fully validated before writing.</small>
+    </div>
+
+    <div class="card">
+      <h2>Security</h2>
+      <div class="grid">
+        <label>Current PIN<input id="pin-current" type="password" inputmode="numeric" autocomplete="current-password"></label>
+        <label>New PIN<input id="pin-new" type="password" inputmode="numeric" pattern="[0-9]{4,12}" autocomplete="new-password"></label>
+        <label>Confirm new PIN<input id="pin-confirm" type="password" inputmode="numeric" pattern="[0-9]{4,12}" autocomplete="new-password"></label>
+      </div>
+      <div class="actions"><button class="primary" onclick="changePin()">Change PIN</button><button onclick="logout()">Log out</button></div>
+      <small>PINs must contain 4–12 digits. Changing it signs out every current settings session.</small>
+    </div>
+  </main>
+  <div id="toast"></div>
+  <script>
+    let model = null;
+    const displayFields = [
+      ['autoArtwork','Auto · logo + artwork'], ['autoLogo','Auto · logo only'],
+      ['alwaysArtwork','Always on · logo + artwork'], ['alwaysLogo','Always on · logo only'], ['off','Display off']
+    ];
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    function toast(message, good=true) { const e=$('toast'); e.textContent=message; e.className=good?'good':'bad'; clearTimeout(e._t); e._t=setTimeout(()=>e.className='',5000); }
+    async function request(url, options={}) { const r=await fetch(url,{headers:{'Content-Type':'application/json'},...options}); if(r.status===401){location.href='/settings/login';throw new Error('Settings session expired');} const data=await r.json(); if(!r.ok||data.success===false) throw new Error(data.error||`HTTP ${r.status}`); return data; }
+
+    async function load() {
+      model = await request('/api/settings');
+      $('current-top').textContent='0x'+((model.rawGpio>>4)&15).toString(16);
+      $('current-low').textContent='0x'+(model.rawGpio&15).toString(16);
+      renderAll();
+      const t=model.displayPreferences.tint; setTint(t.r,t.g,t.b);
+    }
+    function renderAll(){ renderBands(); renderChannels(); renderBandMapping(); renderDisplayMapping(); }
+    function renderBands(){ $('bands').innerHTML=model.channels.bands.map((b,i)=>`<tr><td>${b.ordinal}</td><td><input value="${esc(b.name)}" oninput="model.channels.bands[${i}].name=this.value"></td><td><button class="danger" onclick="removeBand(${i})">Remove</button></td></tr>`).join(''); }
+    function bandOptions(selected){ return model.channels.bands.map(b=>`<option value="${b.ordinal}" ${b.ordinal===selected?'selected':''}>${b.ordinal}: ${esc(b.name)}</option>`).join(''); }
+    function renderChannels(){ $('channels').innerHTML=model.channels.channels.map((c,i)=>`<tr>
+      <td><input value="${esc(c.id)}" oninput="model.channels.channels[${i}].id=this.value"></td>
+      <td><input value="${esc(c.name)}" oninput="model.channels.channels[${i}].name=this.value"></td>
+      <td><select onchange="model.channels.channels[${i}].band=+this.value">${bandOptions(c.band)}</select></td>
+      <td><input type="number" value="${c.order}" oninput="model.channels.channels[${i}].order=+this.value"></td>
+      <td><input value="${esc(c.url)}" oninput="model.channels.channels[${i}].url=this.value"></td>
+      <td><input value="${esc(c.logo||'')}" oninput="model.channels.channels[${i}].logo=this.value"></td>
+      <td><button class="danger" onclick="removeChannel(${i})">×</button></td></tr>`).join(''); }
+    function addBand(){ const ordinal=Math.max(0,...model.channels.bands.map(b=>b.ordinal))+1; const used=new Set(Object.values(model.bandMapping)); let hardware=0; while(used.has(hardware)&&hardware<15)hardware++; model.channels.bands.push({ordinal,name:'Band '+ordinal,hardware}); model.bandMapping[String(ordinal)]=hardware; renderAll(); }
+    function removeBand(i){ const b=model.channels.bands[i]; if(!confirm(`Remove ${b.name} and all of its stations?`))return; model.channels.bands.splice(i,1); model.channels.channels=model.channels.channels.filter(c=>c.band!==b.ordinal); delete model.bandMapping[String(b.ordinal)]; renderAll(); }
+    function addChannel(){ if(!model.channels.bands.length)return toast('Add a band first',false); const n=model.channels.channels.length+1; model.channels.channels.push({id:'station-'+n,name:'New station',band:model.channels.bands[0].ordinal,order:n*10,url:'https://',logo:''}); renderChannels(); }
+    function removeChannel(i){ model.channels.channels.splice(i,1); renderChannels(); }
+    async function saveStations(){ try { model.channels.bands.forEach(b=>b.hardware=+(model.bandMapping[String(b.ordinal)]??b.hardware)); const d=await request('/api/settings/channels',{method:'PUT',body:JSON.stringify(model.channels)}); model.channels=d.channels; renderAll(); toast('Bands and stations saved'); } catch(e){toast(e.message,false);} }
+
+    function renderBandMapping(){ $('band-mapping').innerHTML=model.channels.bands.map(b=>`<div class="field"><span>${esc(b.name)} (#${b.ordinal})</span><input id="bm-${b.ordinal}" type="number" min="0" max="15" value="${model.bandMapping[String(b.ordinal)]}"><button onclick="captureBand(${b.ordinal})">Capture</button></div>`).join(''); }
+    async function currentRaw(){ const s=await request('/api/status'); model.rawGpio=s.rawGpio||0; $('current-top').textContent='0x'+((model.rawGpio>>4)&15).toString(16); $('current-low').textContent='0x'+(model.rawGpio&15).toString(16); return model.rawGpio; }
+    async function captureBand(o){ try { $('bm-'+o).value=((await currentRaw())>>4)&15; } catch(e){toast(e.message,false);} }
+    async function saveBandMapping(){ try { const m={}; model.channels.bands.forEach(b=>m[String(b.ordinal)]=+$('bm-'+b.ordinal).value); const d=await request('/api/settings/band-mapping',{method:'PUT',body:JSON.stringify(m)}); model.bandMapping=d.bandMapping; toast('Band mapping saved'); } catch(e){toast(e.message,false);} }
+
+    function renderDisplayMapping(){ const m=model.displayMapping||{}; $('display-mapping').innerHTML=displayFields.map(([key,label])=>`<div class="field"><span>${label}</span><input id="dm-${key}" type="number" min="0" max="15" value="${m[key]??''}"><button onclick="captureDisplay('${key}')">Capture</button></div>`).join(''); }
+    async function captureDisplay(key){ try { $('dm-'+key).value=(await currentRaw())&15; } catch(e){toast(e.message,false);} }
+    async function saveDisplayMapping(){ try { const m={}; displayFields.forEach(([key])=>m[key]=+$('dm-'+key).value); const d=await request('/api/settings/display-mapping',{method:'PUT',body:JSON.stringify(m)}); model.displayMapping=d.displayMapping; toast('Display mapping saved'); } catch(e){toast(e.message,false);} }
+
+    function setTint(r,g,b){ $('tint-r').value=r; $('tint-g').value=g; $('tint-b').value=b; showTint(); }
+    function showTint(){ ['r','g','b'].forEach(k=>$('tint-'+k+'-v').textContent=(+$('tint-'+k).value).toFixed(2)); }
+    async function saveTint(){ try { const tint={r:+$('tint-r').value,g:+$('tint-g').value,b:+$('tint-b').value}; const d=await request('/api/settings/tint',{method:'PUT',body:JSON.stringify(tint)}); model.displayPreferences.tint=d.tint; toast('Default tint saved'); } catch(e){toast(e.message,false);} }
+    async function importSettings(){ const f=$('import-file').files[0]; if(!f)return toast('Choose a JSON backup first',false); if(!confirm('Replace this radio’s local settings with the selected backup?'))return; try { const value=JSON.parse(await f.text()); const d=await request('/api/settings/import',{method:'POST',body:JSON.stringify(value)}); model=d.settings; renderAll(); const t=model.displayPreferences.tint; setTint(t.r,t.g,t.b); toast('Settings imported'); } catch(e){toast(e.message,false);} }
+    async function changePin(){ const currentPin=$('pin-current').value,newPin=$('pin-new').value,confirmPin=$('pin-confirm').value;if(newPin!==confirmPin)return toast('New PIN entries do not match',false);try{await request('/api/settings/pin',{method:'PUT',body:JSON.stringify({currentPin,newPin})});alert('PIN changed. Sign in again with the new PIN.');location.href='/settings/login';}catch(e){toast(e.message,false);} }
+    async function logout(){ await fetch('/api/settings/logout',{method:'POST'}); location.href='/settings/login'; }
+    load().catch(e=>toast(e.message,false));
+  </script>
+</body>
+</html>

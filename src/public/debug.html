@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0e13"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Radionette — Debug</title>
   <style>
     :root {
@@ -70,7 +71,7 @@
       border-radius: 12px;
       padding: 1.5rem 2rem;
       width: 100%;
-      max-width: 480px;
+      max-width: 1080px;
       margin-bottom: 1rem;
       border: 1px solid var(--border);
     }
@@ -398,14 +399,15 @@
       text-align: right;
     }
   </style>
+  <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-  <h1><a href="/">RADIONETTE</a></h1>
-  <nav class="tabs">
+  <header class="app-header"><a class="brand" href="/">RADIONETTE</a><div class="brand-sub">Diagnostics</div><nav class="tabs">
     <a href="/" class="tab">Status</a>
     <a href="/wifi" class="tab">WiFi</a>
     <a href="/debug" class="tab active">Debug</a>
-  </nav>
+    <a href="/settings" class="tab">Settings</a>
+  </nav></header>
 
   <div id="conn" class="connection-status disconnected">Disconnected</div>
 
@@ -456,6 +458,7 @@
       <tr><td class="key">name</td><td class="val" id="ch-name">---</td></tr>
       <tr><td class="key">url</td><td class="val" id="ch-url">---</td></tr>
     </table>
+    <div class="dial-note">Click a station in the Channel Map to play it temporarily. Moving the physical tuner or band selector restores hardware control. <button class="dial-btn" onclick="setChannelOverride(null)">Return to tuner</button></div>
   </div>
 
   <!-- Volume -->
@@ -504,37 +507,8 @@
       </div>
     </div>
     <div class="dial-note">
-      Physical dial overrides on next change
-      <button class="dial-btn" style="margin-left:0.6rem" onclick="dialReset()">Reset to physical</button>
-    </div>
-  </div>
-
-  <!-- Display tint -->
-  <div class="card">
-    <h2>Display Tint</h2>
-    <div class="dial-group">
-      <span class="dial-label">R</span>
-      <input type="range" min="0.0" max="1.5" step="0.01" id="tint-r" oninput="onTintInput()" style="flex:1">
-      <span class="volume-pct" id="tint-r-val">1.00</span>
-    </div>
-    <div class="dial-group">
-      <span class="dial-label">G</span>
-      <input type="range" min="0.0" max="1.5" step="0.01" id="tint-g" oninput="onTintInput()" style="flex:1">
-      <span class="volume-pct" id="tint-g-val">1.00</span>
-    </div>
-    <div class="dial-group">
-      <span class="dial-label">B</span>
-      <input type="range" min="0.0" max="1.5" step="0.01" id="tint-b" oninput="onTintInput()" style="flex:1">
-      <span class="volume-pct" id="tint-b-val">1.00</span>
-    </div>
-    <div class="dial-group" style="justify-content:flex-end;gap:0.4rem">
-      <button class="dial-btn" onclick="applyTintPreset(1.0,1.0,1.0)">Neutral</button>
-      <button class="dial-btn" onclick="applyTintPreset(1.05,0.90,0.70)">Warm</button>
-      <button class="dial-btn" onclick="applyTintPreset(1.10,0.75,0.50)">Retro</button>
-      <button class="dial-btn" onclick="applyTintPreset(1.15,0.60,0.30)">Ember</button>
-    </div>
-    <div class="dial-note">
-      Per-channel multipliers applied at frame conversion. Cache rebuilds on change.
+      Physical controls override on next movement
+      <button class="dial-btn" style="margin-left:0.6rem" onclick="dialReset()">Reset everything to physical</button>
     </div>
   </div>
 
@@ -590,6 +564,35 @@
     </div>
     <div class="dial-note">
       Forces a specific logo onto the panel regardless of channel/mode. Power-off still blanks the screen.
+    </div>
+  </div>
+
+  <!-- Display tint -->
+  <div class="card">
+    <h2>Display Tint</h2>
+    <div class="dial-group">
+      <span class="dial-label">R</span>
+      <input type="range" min="0.0" max="1.5" step="0.01" id="tint-r" oninput="onTintInput()" style="flex:1">
+      <span class="volume-pct" id="tint-r-val">1.00</span>
+    </div>
+    <div class="dial-group">
+      <span class="dial-label">G</span>
+      <input type="range" min="0.0" max="1.5" step="0.01" id="tint-g" oninput="onTintInput()" style="flex:1">
+      <span class="volume-pct" id="tint-g-val">1.00</span>
+    </div>
+    <div class="dial-group">
+      <span class="dial-label">B</span>
+      <input type="range" min="0.0" max="1.5" step="0.01" id="tint-b" oninput="onTintInput()" style="flex:1">
+      <span class="volume-pct" id="tint-b-val">1.00</span>
+    </div>
+    <div class="dial-group" style="justify-content:flex-end;gap:0.4rem">
+      <button class="dial-btn" onclick="applyTintPreset(1.0,1.0,1.0)">Neutral</button>
+      <button class="dial-btn" onclick="applyTintPreset(1.05,0.90,0.70)">Warm</button>
+      <button class="dial-btn" onclick="applyTintPreset(1.10,0.75,0.50)">Retro</button>
+      <button class="dial-btn" onclick="applyTintPreset(1.15,0.60,0.30)">Ember</button>
+    </div>
+    <div class="dial-note">
+      Per-channel multipliers applied at frame conversion. Cache rebuilds on change.
     </div>
   </div>
 
@@ -776,9 +779,12 @@
             lastBand = ch.band;
           }
           const style = activeChannel ? ' style="color:var(--accent);font-weight:600"' : '';
-          mrows += '<tr><td class="key"' + style + '>' + (activeChannel ? '> ' : '  ') + ch.order + '</td><td class="val"' + style + '>' + escHtml(ch.name) + '</td></tr>';
+          mrows += '<tr class="channel-pick" data-index="' + sorted.indexOf(ch) + '" style="cursor:pointer"><td class="key"' + style + '>' + (activeChannel ? '> ' : '  ') + ch.order + '</td><td class="val"' + style + '>' + escHtml(ch.name) + '</td></tr>';
         });
         mapTable.innerHTML = mrows;
+        mapTable.querySelectorAll('.channel-pick').forEach(row => {
+          row.onclick = () => setChannelOverride(sorted[+row.dataset.index].id);
+        });
       }
 
       // Sync virtual dial buttons to reflect current GPIO state
@@ -798,6 +804,21 @@
       const d = document.createElement('div');
       d.textContent = s;
       return d.innerHTML;
+    }
+
+    async function setChannelOverride(id) {
+      try {
+        const r = await fetch('/api/debug/channel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id })
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Channel switch failed');
+      } catch (e) {
+        console.error('Channel override error:', e);
+        alert(e.message);
+      }
     }
 
     // --- Virtual dial ---
@@ -935,9 +956,12 @@
 
     async function dialReset() {
       try {
-        await fetch('/api/debug/gpio/reset', { method: 'POST' });
+        const r = await fetch('/api/debug/reset', { method: 'POST' });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Reset failed');
       } catch (e) {
-        console.error('Dial reset error:', e);
+        console.error('Debug reset error:', e);
+        alert(e.message);
       }
     }
 

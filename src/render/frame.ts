@@ -81,9 +81,15 @@ export function rgba8888ToRgb565(rgba: Uint8ClampedArray | Buffer): Buffer {
   let si = 0;
   let di = 0;
   for (let i = 0; i < PIXELS; i++) {
-    const r = lr[rgba[si]];
-    const g = lg[rgba[si + 1]];
-    const b = lb[rgba[si + 2]];
+    // The panel is opaque. Composite decoded transparency onto black before
+    // tinting so transparent PNG/GIF pixels never expose stale RGB values.
+    const alpha = rgba[si + 3] / 255;
+    const sr = Math.round(rgba[si] * alpha);
+    const sg = Math.round(rgba[si + 1] * alpha);
+    const sb = Math.round(rgba[si + 2] * alpha);
+    const r = lr[sr];
+    const g = lg[sg];
+    const b = lb[sb];
     si += 4;
     const v =
       ((r & 0xf8) << 8) | ((g & 0xfc) << 3) | (b >> 3);

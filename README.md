@@ -8,9 +8,10 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 - **Bluetooth mode:** The Pi becomes a discoverable Bluetooth speaker called "Radionette" (with a speaker icon on your phone). Pair and stream music from any device.
 - **Round-panel display:** A GC9A01 1.28" round IPS display shows the current channel logo, or dynamically-fetched album art matching the current song from iTunes Search. Channels without a proper logo file get a synthesised text-tile logo.
 - **Physical display settings:** The selector's lower four bits choose album-art/logo-only content and auto-off/always-on behavior, with a fully-off position. Encodings are configurable per radio.
-- **Web status page:** A live dashboard at `http://radionette.local:8080/` shows current station, now-playing metadata, and Bluetooth status. Tab navigation links to WiFi settings and a debug page.
+- **Web status page:** An artwork-forward live dashboard at `http://radionette.local:8080/` shows album art or station logos, now-playing metadata, playback/volume/display state, Bluetooth status, and the configured station catalogue.
 - **WiFi configuration:** If the Pi can't connect to a known WiFi network at boot, it creates an open hotspot (`Radionette-Setup`, no password). Connect to the hotspot and visit `http://10.42.0.1:8080/wifi` to configure a network. WiFi settings are also always accessible at `http://radionette.local:8080/wifi` when connected to the same network.
 - **Debug page:** A live view of GPIO bit state, current band, tuner needle position with per-band wedge markers, full state dump, and grouped channel map at `http://radionette.local:8080/debug`. Includes a virtual dial for switching bands from the browser, tuner calibration buttons, WiFi reset and system reboot controls.
+- **Settings page:** Per-radio station, band, hardware-mapping and display-tint editor at `http://radionette.local:8080/settings`, with validated import/export backups. Settings live under `~/.radionette/` and survive deployments.
 - **Hotspot bleep alert:** When the Pi is in radio mode and the hotspot is active (no WiFi configured), a periodic bleep sounds through the speaker to alert the user to set up WiFi.
 - **Auto-retry playback:** If the radio stream fails (e.g. no internet during hotspot mode), the player retries with escalating backoff (5s, 10s, 30s). Playback also resumes automatically when WiFi is configured via the settings page.
 
@@ -166,7 +167,7 @@ Channel and mode logos are PNG or animated GIF files in `assets/channel-logos/`.
   - `default.png` — shown during the power-on splash.
   - `bluetooth.png` — shown in BT mode while no device is connected.
   - `bluetooth-connected.png` — shown in BT mode while a device is connected.
-- Channels with no `logo` field, or a `logo` pointing at a missing file, get a **synthesised text-tile logo** at runtime — a coloured circular badge with the station name centred on it, hue deterministic per channel id. See "Configuring Stations" below.
+- Channels with no `logo` field, or a `logo` pointing at a missing file, get a **synthesised text-tile logo** at runtime — black background with the station name centred in white. See "Configuring Stations" below.
 - Animated GIFs play indefinitely; per-frame delays from the GIF are honoured (clamped to >=20 ms).
 - Logos are cached in memory after first decode; restart radionette to pick up file changes.
 - On every power-on, `default.png` is shown for 2 s before the channel/BT logo appears (a brief "splash" so the panel doesn't snap straight to content).
@@ -262,13 +263,28 @@ The WiFi settings page is always available at `http://radionette.local:8080/wifi
 |---|---|---|
 | GET | `/wifi` | WiFi settings page |
 | GET | `/debug` | Debug page (GPIO bits, state, channel map) |
+| GET | `/settings` | Persistent per-radio settings editor |
 | GET | `/api/wifi/status` | Current WiFi status (JSON) |
 | GET | `/api/wifi/scan` | Scan for available networks (JSON) |
 | POST | `/api/wifi/connect` | Connect to a network (`{ "ssid": "...", "password": "..." }`) |
 | POST | `/api/debug/gpio` | Inject a virtual GPIO value (`{ "value": 0-1023 }`) |
 | POST | `/api/debug/gpio/reset` | Reset virtual dial override, revert to physical GPIO |
+| POST | `/api/debug/reset` | Clear all temporary debug overrides and restore physical controls/default tint |
+| POST | `/api/debug/channel` | Temporarily select a channel until the physical tuner moves |
 | POST | `/api/system/wifi-reset` | Delete all saved WiFi networks and reboot |
 | POST | `/api/system/reboot` | Reboot the Pi |
+| GET | `/api/settings` | Read editable local settings |
+| POST | `/api/settings/login` | Exchange the settings PIN for an 8-hour session cookie |
+| POST | `/api/settings/logout` | End the current settings session |
+| PUT | `/api/settings/pin` | Change the settings PIN and invalidate all sessions |
+| PUT | `/api/settings/channels` | Save bands and stations |
+| PUT | `/api/settings/band-mapping` | Save per-radio band nibbles |
+| PUT | `/api/settings/display-mapping` | Save per-radio display nibbles |
+| PUT | `/api/settings/tint` | Save and apply the default tint |
+| GET | `/api/settings/export` | Download a complete settings backup |
+| POST | `/api/settings/import` | Validate and import a settings backup |
+
+The settings page and `/api/settings/*` APIs use a PIN with an 8-hour session cookie. The initial PIN is `1972`; change it under **Settings → Security**. The saved PIN is stored as a salted scrypt hash and is not included in settings exports. Debug write APIs remain unauthenticated, so only expose port 8080 on trusted networks.
 
 ## Development
 
@@ -353,7 +369,7 @@ Edit `channels.json`. The file has two top-level arrays: `bands` and `channels`.
 - **Bands** are the physical rotary switch positions. `ordinal` is the logical band number used in code and UI. `hardware` is the raw top-nibble (0..15) the physical rotary produces for this band. `name` is a human label.
 - **Channels** each reference a `band` ordinal and carry an `order` value that decides where the station falls on the tuner's needle sweep — the AS5600 divides the sweep into equal wedges (one per channel in the current band) and stations are laid out in increasing `order` from the CCW end to the CW end. Sparse values (10, 20, 30, ...) let you insert new stations between existing ones without renumbering.
 - **`id`** is a stable string identifier used in logs and in the state broadcast.
-- **`logo`** is a filename (PNG or GIF) under `assets/channel-logos/`. If omitted (or the file is missing), the display service generates a text-only fallback logo from the channel name at runtime — a coloured circular tile with the station name centred on it. The colour is deterministic per `id` so a given station always looks the same.
+- **`logo`** is a filename (PNG or GIF) under `assets/channel-logos/`. If omitted (or the file is missing), the display service generates a text-only fallback logo with a black background and centred white station name.
 
 There is **no cap** on channels per band — 4 channels or 40, the needle fills the full sweep either way. Bands with no channels are silent. Physical rotary positions whose hardware nibble doesn't match any declared band are also silent.
 
@@ -381,6 +397,10 @@ radionette/
     backlight.ts         # Display backlight controller (GPIO 13)
     display.ts           # Low-level GC9A01 SPI driver
     display-service.ts   # State -> logo mapping (channel/artwork/text-tile)
+    display-settings.ts  # Per-radio lower-nibble display policy mapping
+    display-preferences.ts # Persistent default tint
+    config-storage.ts    # Atomic local JSON writes + backups
+    settings-security.ts # Settings PIN hashing and session management
     render/
       displayController.ts # Paint queue, animation timer
       logos.ts             # Logo loader: files, http URLs, text: tiles
@@ -389,9 +409,12 @@ radionette/
     hotspot-alert.ts     # Periodic bleep when hotspot is active in radio mode
     web.ts               # HTTP + WebSocket server
     public/
-      index.html         # Status page (single-file, inline CSS/JS)
-      wifi.html          # WiFi settings page (single-file, inline CSS/JS)
-      debug.html         # Debug page (GPIO bits, state, tuner, channel map)
+      index.html         # Artwork-first live status dashboard
+      wifi.html          # WiFi scan/connect page
+      debug.html         # GPIO, tuner, channel override and diagnostics
+      settings.html      # Stations, mappings, tint, backup/import editor
+      settings-login.html # PIN login for persistent settings
+      app.css            # Shared visual shell for all web pages
     gpio-logger.ts       # Utility for mapping dial positions
     scripts/
       display-smoke.ts       # Colour-bar hardware test for the GC9A01

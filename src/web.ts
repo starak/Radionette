@@ -3,18 +3,130 @@ import * as fs from "fs";
 import * as path from "path";
 import { WebSocketServer, WebSocket } from "ws";
 import { radioState, RadioState } from "./state";
-import { getAllChannels, getAllBands } from "./channels";
+import {
+  getAllChannels,
+  getAllBands,
+  getChannelsConfig,
+  saveChannelsConfig,
+  validateChannelsConfig,
+  getBandMapping,
+  saveBandMapping,
+  validateBandMapping,
+  channelById,
+} from "./channels";
 import { getWifiStatus, scanNetworks, connectToNetwork, resetWifiConfig, rebootSystem } from "./wifi";
 import { injectGpioValue, resetGpioOverride } from "./gpio";
 import { setLogoOverride, getLogoOverride, setDisplayTint, getDisplayTint } from "./display-service";
-import { setVolumeSoftware } from "./volume";
-import { calibrateTuner, invertTuner, tunerStatus } from "./tuner";
-import { getDisplayOptions } from "./display-settings";
+import { setVolumeSoftware, resetVolumeToPhysical } from "./volume";
+import { calibrateTuner, invertTuner, tunerStatus, setTunerChannelOverride } from "./tuner";
+import {
+  getDisplayOptions,
+  getDisplayMapping,
+  clearDisplayMapping,
+  saveDisplayMapping,
+  validateDisplayMapping,
+} from "./display-settings";
+import {
+  getDisplayPreferences,
+  saveDefaultTint,
+  validateDisplayPreferences,
+} from "./display-preferences";
+import {
+  changeSettingsPin,
+  createSettingsSession,
+  deleteSettingsSession,
+  settingsSessionMaxAgeSeconds,
+  verifySettingsPin,
+  verifySettingsSession,
+} from "./settings-security";
 
 const PORT = 8080;
 
 let wss: WebSocketServer | null = null;
 let server: http.Server | null = null;
+const SETTINGS_COOKIE = "radionette_settings";
+const loginFailures = new Map<string, { count: number; blockedUntil: number }>();
+
+function loginClientKey(req: http.IncomingMessage): string {
+  return req.socket.remoteAddress || "unknown";
+}
+
+function loginBlocked(req: http.IncomingMessage): number {
+  const state = loginFailures.get(loginClientKey(req));
+  if (!state || state.blockedUntil <= Date.now()) return 0;
+  return Math.ceil((state.blockedUntil - Date.now()) / 1000);
+}
+
+function recordLoginFailure(req: http.IncomingMessage): void {
+  const key = loginClientKey(req);
+  const current = loginFailures.get(key);
+  const count = current?.blockedUntil && current.blockedUntil <= Date.now()
+    ? 1
+    : (current?.count || 0) + 1;
+  loginFailures.set(key, {
+    count,
+    blockedUntil: count >= 5 ? Date.now() + 60_000 : 0,
+  });
+}
+
+function getCookie(req: http.IncomingMessage, name: string): string | undefined {
+  const header = req.headers.cookie || "";
+  for (const part of header.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key === name) return decodeURIComponent(rest.join("="));
+  }
+  return undefined;
+}
+
+function settingsToken(req: http.IncomingMessage): string | undefined {
+  return getCookie(req, SETTINGS_COOKIE);
+}
+
+function settingsAuthenticated(req: http.IncomingMessage): boolean {
+  return verifySettingsSession(settingsToken(req));
+}
+
+function sessionCookie(token: string): string {
+  return `${SETTINGS_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${settingsSessionMaxAgeSeconds()}`;
+}
+
+function clearSessionCookie(): string {
+  return `${SETTINGS_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`;
+}
+
+function sendJson(res: http.ServerResponse, status: number, value: unknown): void {
+  res.writeHead(status, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(value));
+}
+
+function readJsonBody(req: http.IncomingMessage, maxBytes = 2_000_000): Promise<any> {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+      if (Buffer.byteLength(body) > maxBytes) {
+        reject(new Error("Request body is too large"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => {
+      try { resolve(JSON.parse(body || "{}")); }
+      catch { reject(new Error("Invalid JSON")); }
+    });
+    req.on("error", reject);
+  });
+}
+
+function getSettingsBundle(): object {
+  return {
+    version: 1,
+    channels: getChannelsConfig(),
+    bandMapping: getBandMapping(),
+    displayMapping: getDisplayMapping(),
+    displayPreferences: getDisplayPreferences(),
+    rawGpio: radioState.state.rawGpio,
+  };
+}
 
 function getStatusPayload(): string {
   return JSON.stringify({
@@ -44,6 +156,30 @@ export function startWebServer(): void {
   const publicDir = path.resolve(__dirname, "public");
 
   server = http.createServer(async (req, res) => {
+    if (req.url === "/app.css") {
+      fs.readFile(path.join(publicDir, "app.css"), (err, data) => {
+        if (err) { res.writeHead(404); res.end(); return; }
+        res.writeHead(200, { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "no-cache" });
+        res.end(data);
+      });
+      return;
+    }
+
+    if (req.url?.startsWith("/logos/")) {
+      const requested = decodeURIComponent(req.url.slice("/logos/".length));
+      const filename = path.basename(requested);
+      if (!filename || filename !== requested) { res.writeHead(400); res.end(); return; }
+      const logoPath = path.resolve(process.cwd(), "assets", "channel-logos", filename);
+      fs.readFile(logoPath, (err, data) => {
+        if (err) { res.writeHead(404); res.end(); return; }
+        const ext = path.extname(filename).toLowerCase();
+        const type = ext === ".gif" ? "image/gif" : ext === ".svg" ? "image/svg+xml" : "image/png";
+        res.writeHead(200, { "Content-Type": type, "Cache-Control": "public, max-age=3600" });
+        res.end(data);
+      });
+      return;
+    }
+
     if (req.url === "/" || req.url === "/index.html") {
       const htmlPath = path.join(publicDir, "index.html");
       fs.readFile(htmlPath, "utf-8", (err, data) => {
@@ -81,6 +217,198 @@ export function startWebServer(): void {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(data);
       });
+      return;
+    }
+
+    if (req.url === "/settings/login" && req.method === "GET") {
+      if (settingsAuthenticated(req)) {
+        res.writeHead(302, { Location: "/settings" });
+        res.end();
+        return;
+      }
+      const htmlPath = path.join(publicDir, "settings-login.html");
+      fs.readFile(htmlPath, "utf-8", (err, data) => {
+        if (err) {
+          res.writeHead(500, { "Content-Type": "text/plain" });
+          res.end("Failed to load settings login page");
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(data);
+      });
+      return;
+    }
+
+    if (req.url === "/api/settings/login" && req.method === "POST") {
+      try {
+        const retryAfter = loginBlocked(req);
+        if (retryAfter) {
+          res.writeHead(429, {
+            "Content-Type": "application/json",
+            "Retry-After": String(retryAfter),
+          });
+          res.end(JSON.stringify({ success: false, error: `Too many attempts; try again in ${retryAfter} seconds` }));
+          return;
+        }
+        const { pin } = await readJsonBody(req, 10_000);
+        if (!verifySettingsPin(pin)) {
+          recordLoginFailure(req);
+          sendJson(res, 401, { success: false, error: "Incorrect PIN" });
+          return;
+        }
+        loginFailures.delete(loginClientKey(req));
+        const token = createSettingsSession();
+        res.writeHead(200, {
+          "Content-Type": "application/json",
+          "Set-Cookie": sessionCookie(token),
+        });
+        res.end(JSON.stringify({ success: true }));
+      } catch (err: any) {
+        sendJson(res, 400, { success: false, error: err.message });
+      }
+      return;
+    }
+
+    if (req.url === "/api/settings/logout" && req.method === "POST") {
+      deleteSettingsSession(settingsToken(req));
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Set-Cookie": clearSessionCookie(),
+      });
+      res.end(JSON.stringify({ success: true }));
+      return;
+    }
+
+    if (req.url === "/settings" || req.url === "/settings.html") {
+      if (!settingsAuthenticated(req)) {
+        res.writeHead(302, { Location: "/settings/login" });
+        res.end();
+        return;
+      }
+      const htmlPath = path.join(publicDir, "settings.html");
+      fs.readFile(htmlPath, "utf-8", (err, data) => {
+        if (err) {
+          res.writeHead(500, { "Content-Type": "text/plain" });
+          res.end("Failed to load settings page");
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(data);
+      });
+      return;
+    }
+
+    // --- Persistent per-radio settings ---
+
+    if (req.url?.startsWith("/api/settings") && !settingsAuthenticated(req)) {
+      sendJson(res, 401, { success: false, error: "Settings PIN required" });
+      return;
+    }
+
+    if (req.url === "/api/settings/pin" && req.method === "PUT") {
+      try {
+        const { currentPin, newPin } = await readJsonBody(req, 10_000);
+        changeSettingsPin(currentPin, newPin);
+        res.writeHead(200, {
+          "Content-Type": "application/json",
+          "Set-Cookie": clearSessionCookie(),
+        });
+        res.end(JSON.stringify({ success: true, loginRequired: true }));
+      } catch (err: any) {
+        sendJson(res, 400, { success: false, error: err.message });
+      }
+      return;
+    }
+
+    if (req.url === "/api/settings" && req.method === "GET") {
+      sendJson(res, 200, getSettingsBundle());
+      return;
+    }
+
+    if (req.url === "/api/settings/export" && req.method === "GET") {
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Content-Disposition": `attachment; filename="radionette-settings-${new Date().toISOString().slice(0, 10)}.json"`,
+      });
+      res.end(`${JSON.stringify(getSettingsBundle(), null, 2)}\n`);
+      return;
+    }
+
+    if (req.url === "/api/settings/channels" && req.method === "PUT") {
+      try {
+        const value = await readJsonBody(req);
+        const saved = saveChannelsConfig(value);
+        resetGpioOverride();
+        broadcast(getStatusPayload());
+        sendJson(res, 200, { success: true, channels: saved });
+      } catch (err: any) {
+        sendJson(res, 400, { success: false, error: err.message });
+      }
+      return;
+    }
+
+    if (req.url === "/api/settings/band-mapping" && req.method === "PUT") {
+      try {
+        const value = await readJsonBody(req);
+        const saved = saveBandMapping(value);
+        resetGpioOverride();
+        broadcast(getStatusPayload());
+        sendJson(res, 200, { success: true, bandMapping: saved });
+      } catch (err: any) {
+        sendJson(res, 400, { success: false, error: err.message });
+      }
+      return;
+    }
+
+    if (req.url === "/api/settings/display-mapping" && req.method === "PUT") {
+      try {
+        const value = await readJsonBody(req);
+        const saved = saveDisplayMapping(value);
+        resetGpioOverride();
+        broadcast(getStatusPayload());
+        sendJson(res, 200, { success: true, displayMapping: saved });
+      } catch (err: any) {
+        sendJson(res, 400, { success: false, error: err.message });
+      }
+      return;
+    }
+
+    if (req.url === "/api/settings/tint" && req.method === "PUT") {
+      try {
+        const value = await readJsonBody(req);
+        const tint = saveDefaultTint(value);
+        await setDisplayTint(tint);
+        broadcast(getStatusPayload());
+        sendJson(res, 200, { success: true, tint });
+      } catch (err: any) {
+        sendJson(res, 400, { success: false, error: err.message });
+      }
+      return;
+    }
+
+    if (req.url === "/api/settings/import" && req.method === "POST") {
+      try {
+        const value = await readJsonBody(req);
+        if (value.version !== 1) throw new Error("Unsupported settings backup version");
+        // Validate the entire backup before writing any file.
+        const channels = validateChannelsConfig(value.channels);
+        const bandMapping = validateBandMapping(value.bandMapping, channels.bands);
+        const displayMapping = value.displayMapping === null
+          ? null
+          : validateDisplayMapping(value.displayMapping);
+        const preferences = validateDisplayPreferences(value.displayPreferences);
+        saveChannelsConfig(channels);
+        saveBandMapping(bandMapping);
+        if (displayMapping) saveDisplayMapping(displayMapping);
+        else clearDisplayMapping();
+        const tint = saveDefaultTint(preferences);
+        await setDisplayTint(tint);
+        resetGpioOverride();
+        broadcast(getStatusPayload());
+        sendJson(res, 200, { success: true, settings: getSettingsBundle() });
+      } catch (err: any) {
+        sendJson(res, 400, { success: false, error: err.message });
+      }
       return;
     }
 
@@ -173,6 +501,43 @@ export function startWebServer(): void {
       resetGpioOverride();
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ success: true }));
+      return;
+    }
+
+    if (req.url === "/api/debug/reset" && req.method === "POST") {
+      try {
+        resetGpioOverride();
+        setTunerChannelOverride(null);
+        setLogoOverride(null);
+        await resetVolumeToPhysical();
+        await setDisplayTint(getDisplayPreferences().tint);
+        broadcast(getStatusPayload());
+        sendJson(res, 200, { success: true });
+      } catch (err: any) {
+        sendJson(res, 500, { success: false, error: err.message });
+      }
+      return;
+    }
+
+    if (req.url === "/api/debug/channel" && req.method === "POST") {
+      try {
+        const { id } = await readJsonBody(req, 10_000);
+        if (id === null) {
+          setTunerChannelOverride(null);
+          sendJson(res, 200, { success: true, id: null });
+          return;
+        }
+        if (typeof id !== "string") throw new Error("id must be a channel id or null");
+        const channel = channelById(id);
+        if (!channel) throw new Error(`Unknown channel: ${id}`);
+        if (!radioState.state.power || radioState.state.mode !== "radio") {
+          throw new Error("Radio must be powered on in radio mode");
+        }
+        setTunerChannelOverride(channel);
+        sendJson(res, 200, { success: true, id });
+      } catch (err: any) {
+        sendJson(res, 400, { success: false, error: err.message });
+      }
       return;
     }
 

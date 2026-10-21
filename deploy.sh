@@ -58,7 +58,7 @@ ssh "${REMOTE}" "chmod +x ${REMOTE_DIR}/wifi-fallback.sh"
 #ssh "${REMOTE}" "export NVM_DIR=\$HOME/.nvm; [ -s \$NVM_DIR/nvm.sh ] && . \$NVM_DIR/nvm.sh; cd ${REMOTE_DIR} && npm install --omit=dev && npm rebuild"
 
 # Auto-install deps if node_modules is missing/empty on the Pi, or if --install was passed.
-# --foreground-scripts ensures native builds (spi-device, rpio, canvas, ioctl) actually execute
+# --foreground-scripts ensures native builds (spi-device, rpio, ioctl) actually execute
 # instead of being silently skipped by npm's install-script safety block.
 NEEDS_INSTALL=$(ssh "${REMOTE}" "if [ ! -d ${REMOTE_DIR}/node_modules ] || [ -z \"\$(ls -A ${REMOTE_DIR}/node_modules 2>/dev/null)\" ]; then echo 1; else echo 0; fi")
 if [ "${WIPE_MODULES}" = "1" ]; then

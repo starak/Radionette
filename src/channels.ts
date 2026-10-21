@@ -1,7 +1,7 @@
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 import { ChannelInfo } from "./state";
+import { radionetteConfigPath, writeJsonAtomic } from "./config-storage";
 
 // ── Schema ─────────────────────────────────────────────────────────────
 //
@@ -36,7 +36,7 @@ export interface BandInfo {
   name: string;
 }
 
-interface ChannelEntry {
+export interface ChannelEntry {
   id: string;
   band: number;
   order: number;
@@ -45,13 +45,13 @@ interface ChannelEntry {
   logo?: string;
 }
 
-interface ChannelsConfig {
+export interface ChannelsConfig {
   _comment?: string;
   bands: BandInfo[];
   channels: ChannelEntry[];
 }
 
-type BandHardwareOverride = Record<string, number>;
+export type BandHardwareOverride = Record<string, number>;
 
 // ── Module state ───────────────────────────────────────────────────────
 
@@ -77,8 +77,8 @@ function makeChannelInfo(e: ChannelEntry): ChannelInfo {
 // ── Public API ─────────────────────────────────────────────────────────
 
 export function loadChannels(configPath?: string): void {
-  const filePath =
-    configPath || path.resolve(process.cwd(), "channels.json");
+  const localPath = process.env.RADIONETTE_CHANNELS || radionetteConfigPath("channels.json");
+  const filePath = configPath || (fs.existsSync(localPath) ? localPath : path.resolve(process.cwd(), "channels.json"));
 
   bandsByOrdinal = new Map();
   bandsByHardware = new Map();
@@ -89,16 +89,9 @@ export function loadChannels(configPath?: string): void {
   let config: ChannelsConfig;
   try {
     const raw = fs.readFileSync(filePath, "utf-8");
-    config = JSON.parse(raw) as ChannelsConfig;
+    config = validateChannelsConfig(JSON.parse(raw));
   } catch (err) {
     console.error(`[Channels] Failed to read ${filePath}:`, err);
-    return;
-  }
-
-  if (!Array.isArray(config.bands) || !Array.isArray(config.channels)) {
-    console.error(
-      `[Channels] ${filePath}: expected \`bands\` and \`channels\` arrays`
-    );
     return;
   }
 
@@ -108,7 +101,7 @@ export function loadChannels(configPath?: string): void {
   // don't overwrite it and one checkout can serve multiple radios.
   const overridePath =
     process.env.RADIONETTE_BAND_MAPPING ||
-    path.join(os.homedir(), ".radionette", "band-mapping.json");
+    radionetteConfigPath("band-mapping.json");
   if (fs.existsSync(overridePath)) {
     try {
       const override = JSON.parse(
@@ -210,6 +203,92 @@ export function loadChannels(configPath?: string): void {
     `[Channels] Loaded ${channelsById.size} channels across ${bandsByOrdinal.size} bands from ${filePath}`
   );
   console.log(`[Channels] Bands: ${bandSummary}`);
+}
+
+export function validateChannelsConfig(value: any): ChannelsConfig {
+  if (!value || !Array.isArray(value.bands) || !Array.isArray(value.channels)) {
+    throw new Error("expected bands and channels arrays");
+  }
+  const ordinals = new Set<number>();
+  const hardwareValues = new Set<number>();
+  const bands: BandInfo[] = value.bands.map((band: any, index: number) => {
+    if (!Number.isInteger(band?.ordinal) || band.ordinal < 1) throw new Error(`band ${index + 1}: ordinal must be a positive integer`);
+    if (ordinals.has(band.ordinal)) throw new Error(`duplicate band ordinal ${band.ordinal}`);
+    if (!Number.isInteger(band.hardware) || band.hardware < 0 || band.hardware > 15) throw new Error(`band ${band.ordinal}: hardware must be 0..15`);
+    if (hardwareValues.has(band.hardware)) throw new Error(`duplicate band hardware value ${band.hardware}`);
+    if (typeof band.name !== "string" || !band.name.trim()) throw new Error(`band ${band.ordinal}: name is required`);
+    ordinals.add(band.ordinal);
+    hardwareValues.add(band.hardware);
+    return { ordinal: band.ordinal, hardware: band.hardware, name: band.name.trim() };
+  });
+  const ids = new Set<string>();
+  const channels: ChannelEntry[] = value.channels.map((channel: any, index: number) => {
+    if (typeof channel?.id !== "string" || !channel.id.trim()) throw new Error(`channel ${index + 1}: id is required`);
+    const id = channel.id.trim();
+    if (ids.has(id)) throw new Error(`duplicate channel id ${id}`);
+    if (!Number.isInteger(channel.band) || !ordinals.has(channel.band)) throw new Error(`channel ${id}: unknown band ${channel.band}`);
+    if (typeof channel.order !== "number" || !Number.isFinite(channel.order)) throw new Error(`channel ${id}: order must be a number`);
+    if (typeof channel.name !== "string" || !channel.name.trim()) throw new Error(`channel ${id}: name is required`);
+    if (typeof channel.url !== "string") throw new Error(`channel ${id}: URL is required`);
+    try {
+      const parsedUrl = new URL(channel.url.trim());
+      if (!/^https?:$/.test(parsedUrl.protocol) || !parsedUrl.hostname) throw new Error();
+    } catch {
+      throw new Error(`channel ${id}: enter a valid http:// or https:// URL`);
+    }
+    if (channel.logo !== undefined && typeof channel.logo !== "string") throw new Error(`channel ${id}: logo must be text`);
+    ids.add(id);
+    return {
+      id,
+      band: channel.band,
+      order: channel.order,
+      name: channel.name.trim(),
+      url: channel.url.trim(),
+      ...(channel.logo?.trim() ? { logo: channel.logo.trim() } : {}),
+    };
+  });
+  return { bands, channels };
+}
+
+export function saveChannelsConfig(value: unknown): ChannelsConfig {
+  const validated = validateChannelsConfig(value);
+  const filePath = process.env.RADIONETTE_CHANNELS || radionetteConfigPath("channels.json");
+  writeJsonAtomic(filePath, validated);
+  loadChannels(filePath);
+  return getChannelsConfig();
+}
+
+export function getChannelsConfig(): ChannelsConfig {
+  return {
+    bands: getAllBands().map((band) => ({ ...band })),
+    channels: getAllChannels().map((channel) => ({ ...channel })),
+  };
+}
+
+export function validateBandMapping(value: any, bands: BandInfo[] = getAllBands()): BandHardwareOverride {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("band mapping must be an object");
+  const result: BandHardwareOverride = {};
+  const seen = new Set<number>();
+  for (const band of bands) {
+    const hardware = value[String(band.ordinal)];
+    if (!Number.isInteger(hardware) || hardware < 0 || hardware > 15) throw new Error(`band ${band.ordinal}: hardware must be 0..15`);
+    if (seen.has(hardware)) throw new Error(`duplicate band hardware value ${hardware}`);
+    result[String(band.ordinal)] = hardware;
+    seen.add(hardware);
+  }
+  return result;
+}
+
+export function saveBandMapping(value: unknown): BandHardwareOverride {
+  const validated = validateBandMapping(value);
+  const filePath = process.env.RADIONETTE_BAND_MAPPING || radionetteConfigPath("band-mapping.json");
+  writeJsonAtomic(filePath, validated);
+  loadChannels();
+  return validated;
+}
+
+export function getBandMapping(): BandHardwareOverride {
+  return Object.fromEntries(getAllBands().map((band) => [String(band.ordinal), band.hardware]));
 }
 
 /**

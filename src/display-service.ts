@@ -229,7 +229,7 @@ export async function initDisplayService(
   // Pre-warm the cache for logos that may need to appear instantly. The
   // splash uses defaultLogo on every power-on; the BT logos appear on every
   // BT-mode toggle. Pre-decoding here means the first power-on after boot
-  // doesn't sit on black for ~1s while node-canvas chews through the PNG.
+  // doesn't sit on black while FFmpeg decodes the PNG.
   await Promise.all([
     loadLogo(opts.defaultLogo),
     loadLogo(opts.bluetoothLogo),
@@ -298,7 +298,7 @@ export async function setDisplayTint(next: Partial<Tint>): Promise<void> {
   setTint(next);
   clearLogoCache();
   // Pre-warm the logos that need to appear instantly so power-on / BT toggle
-  // doesn't sit on a delayed frame while node-canvas re-decodes.
+  // doesn't sit on a delayed frame while FFmpeg re-decodes.
   if (opts) {
     await Promise.all([
       loadLogo(opts.defaultLogo),
