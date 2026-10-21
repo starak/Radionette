@@ -2,6 +2,7 @@ import { radioState } from "./state";
 import { bandForHardware, channelsForBand } from "./channels";
 import { setTunerBand, isTunerActive } from "./tuner";
 import { playTunerStatic } from "./static-noise";
+import { resolveDisplaySetting } from "./display-settings";
 
 // rpio is a native module that only works on the Pi.
 // We require() it so the app can still be built on other machines
@@ -68,8 +69,12 @@ function processValue(rawValue: number): void {
   // the switch is disconnected, broken, or in the "off" position), pin HIGH
   // = stereo. The pull-down on MONO_PIN guarantees a known LOW when floating.
   const monoBit = ((rawValue >> 10) & 1) ^ 1;
+  const displaySetting = resolveDisplaySetting(channelBits & 0x0f);
 
   radioState.setRawGpio(rawValue);
+  // Apply display policy before power:on so a display-off selection cannot
+  // flash the splash screen and always-on is active from the first frame.
+  radioState.setDisplaySetting(displaySetting);
 
   // Power check first — if off, everything stops
   radioState.setPower(powerBit === 1);
@@ -175,7 +180,10 @@ function poll(): void {
               : `Band: ${bandOrdinal} (empty)`;
           }
         }
-        console.log(`[GPIO] Binary: ${binary}  Decimal: ${rawValue}  ${label}`);
+        const displaySetting = resolveDisplaySetting(rawValue & 0x0f);
+        console.log(
+          `[GPIO] Binary: ${binary}  Decimal: ${rawValue}  ${label}  Display: ${displaySetting.label} (0x${displaySetting.bits.toString(16)}${displaySetting.mapped ? "" : ", fallback"})`,
+        );
         processValue(rawValue);
       }
     }, DEBOUNCE_MS);

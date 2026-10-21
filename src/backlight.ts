@@ -13,12 +13,18 @@
  *   - Anything that changes the panel image (channel change, BT device
  *     connect, now-playing album art appearing) re-arms the timer so the
  *     user gets a fresh 20-second window to see the update.
- *   - While in Bluetooth search mode (BT mode, no device), backlight stays
- *     on indefinitely — no auto-off.
+ *   - Lower GPIO bits select auto-off, always-on, or display-off policy.
+ *     The selected policy applies in radio and Bluetooth modes.
  *   - power:off cuts the backlight immediately and clears the timer.
  */
 
 import { radioState, RadioState } from "./state";
+import {
+  BacklightPolicy,
+  DisplaySetting,
+  displayModeAllowsArtwork,
+  resolveDisplaySetting,
+} from "./display-settings";
 
 const OFF_AFTER_MS = 20000;
 
@@ -27,10 +33,9 @@ let pin: number = -1;
 
 let offTimer: NodeJS.Timeout | null = null;
 let bright = false;          // current pin state cache
-let brightLocked = false;    // suppresses auto-off (BT search)
 let overrideLocked = false;  // external lock (e.g. debug logo override)
+let selectedPolicy: BacklightPolicy = "auto";
 
-let lastBtSearching = false;
 let lastBtDevice: string | null = null;
 
 function clearOffTimer(): void {
@@ -48,7 +53,7 @@ function writePin(on: boolean): void {
 
 function scheduleOff(): void {
   clearOffTimer();
-  if (brightLocked || overrideLocked) return;
+  if (selectedPolicy !== "auto" || overrideLocked) return;
   offTimer = setTimeout(() => {
     offTimer = null;
     writePin(false);
@@ -57,64 +62,61 @@ function scheduleOff(): void {
 
 /** Turn backlight on and (re)start the 20s auto-off timer. */
 function wake(): void {
+  if (!radioState.state.power) return;
+  if (overrideLocked || selectedPolicy === "always-on") {
+    clearOffTimer();
+    writePin(true);
+    return;
+  }
+  if (selectedPolicy === "off") {
+    clearOffTimer();
+    writePin(false);
+    return;
+  }
   writePin(true);
   scheduleOff();
 }
 
-/** Backlight off, all timers cleared. */
-function setOff(): void {
+function applyPolicy(): void {
   clearOffTimer();
-  brightLocked = false;
-  // Don't clear overrideLocked — it's owned by the caller (debug page).
-  if (overrideLocked) {
+  if (!radioState.state.power) {
+    writePin(false);
+  } else if (overrideLocked || selectedPolicy === "always-on") {
     writePin(true);
-    return;
+  } else if (selectedPolicy === "off") {
+    writePin(false);
+  } else {
+    wake();
   }
-  writePin(false);
-}
-
-/** Force backlight on with NO auto-off (used while in BT search). */
-function lockBright(): void {
-  brightLocked = true;
-  clearOffTimer();
-  writePin(true);
-}
-
-function unlockBright(): void {
-  brightLocked = false;
 }
 
 function onStateChange(s: RadioState): void {
-  const inBtSearch = s.power && s.mode === "bluetooth" && !s.bluetoothDevice;
   const btDevice = s.bluetoothDevice;
-
-  if (inBtSearch && !lastBtSearching) {
-    lockBright();
-  } else if (!inBtSearch && lastBtSearching) {
-    unlockBright();
-  }
 
   // BT device connected (null -> non-null) — re-arm the timer.
   if (btDevice && !lastBtDevice) {
     wake();
   }
 
-  lastBtSearching = inBtSearch;
   lastBtDevice = btDevice;
 }
 
 function onPowerOn(): void {
-  brightLocked = false;
-  wake();
+  applyPolicy();
 }
 
 function onPowerOff(): void {
-  setOff();
+  clearOffTimer();
+  writePin(false);
 }
 
 function onChannelChange(): void {
   if (!radioState.state.power) return;
-  if (brightLocked) return;
+  wake();
+}
+
+function onModeChange(): void {
+  if (!radioState.state.power) return;
   wake();
 }
 
@@ -125,8 +127,13 @@ function onChannelChange(): void {
  */
 function onArtworkChange(): void {
   if (!radioState.state.power) return;
-  if (brightLocked) return;
+  if (!displayModeAllowsArtwork(radioState.state.displayMode)) return;
   wake();
+}
+
+function onDisplayMode(setting: DisplaySetting): void {
+  selectedPolicy = setting.backlight;
+  applyPolicy();
 }
 
 /**
@@ -138,16 +145,9 @@ export function setBacklightOverrideLock(locked: boolean): void {
   overrideLocked = locked;
   if (locked) {
     clearOffTimer();
-    writePin(true);
+    writePin(radioState.state.power);
   } else {
-    // Released — if power is on, re-arm the auto-off timer from now.
-    // Otherwise drop to off.
-    if (radioState.state.power) {
-      // Don't change the brightness state if BT search has its own lock.
-      if (!brightLocked) scheduleOff();
-    } else {
-      writePin(false);
-    }
+    applyPolicy();
   }
 }
 
@@ -160,10 +160,9 @@ export function startBacklight(rpioModule: any, gpioPin: number): void {
   rpio = rpioModule;
   pin = gpioPin;
   bright = false;
-  brightLocked = false;
   overrideLocked = false;
-  lastBtSearching = false;
   lastBtDevice = null;
+  selectedPolicy = resolveDisplaySetting(radioState.state.displayBits).backlight;
 
   if (!rpio) {
     console.warn("[Backlight] rpio not available — running in dev mode");
@@ -173,13 +172,16 @@ export function startBacklight(rpioModule: any, gpioPin: number): void {
   radioState.on("power:off", onPowerOff);
   radioState.on("channel:change", onChannelChange);
   radioState.on("artwork:change", onArtworkChange);
+  radioState.on("display:mode", onDisplayMode);
+  radioState.on("mode:bluetooth", onModeChange);
+  radioState.on("mode:radio", onModeChange);
   radioState.on("state:change", onStateChange);
 
   // Sync to current state (covers boot-up where radio is already powered).
   if (radioState.state.power) {
     onPowerOn();
   } else {
-    setOff();
+    onPowerOff();
   }
 
   console.log(`[Backlight] Started on GPIO ${gpioPin} (auto-off after ${OFF_AFTER_MS}ms)`);
@@ -190,6 +192,9 @@ export function stopBacklight(): void {
   radioState.off("power:off", onPowerOff);
   radioState.off("channel:change", onChannelChange);
   radioState.off("artwork:change", onArtworkChange);
+  radioState.off("display:mode", onDisplayMode);
+  radioState.off("mode:bluetooth", onModeChange);
+  radioState.off("mode:radio", onModeChange);
   radioState.off("state:change", onStateChange);
   clearOffTimer();
   if (rpio && pin >= 0) {

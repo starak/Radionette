@@ -7,6 +7,7 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 - **Radio mode:** A rotary switch selects a band (e.g. Norsk, BBC) and a magnetic angle sensor on the tuning needle picks a station within the band. 30+ internet radio streams (HTTP MP3/icecast and HLS). Audio plays through the Pi's 3.5mm jack or HDMI.
 - **Bluetooth mode:** The Pi becomes a discoverable Bluetooth speaker called "Radionette" (with a speaker icon on your phone). Pair and stream music from any device.
 - **Round-panel display:** A GC9A01 1.28" round IPS display shows the current channel logo, or dynamically-fetched album art matching the current song from iTunes Search. Channels without a proper logo file get a synthesised text-tile logo.
+- **Physical display settings:** The selector's lower four bits choose album-art/logo-only content and auto-off/always-on behavior, with a fully-off position. Encodings are configurable per radio.
 - **Web status page:** A live dashboard at `http://radionette.local:8080/` shows current station, now-playing metadata, and Bluetooth status. Tab navigation links to WiFi settings and a debug page.
 - **WiFi configuration:** If the Pi can't connect to a known WiFi network at boot, it creates an open hotspot (`Radionette-Setup`, no password). Connect to the hotspot and visit `http://10.42.0.1:8080/wifi` to configure a network. WiFi settings are also always accessible at `http://radionette.local:8080/wifi` when connected to the same network.
 - **Debug page:** A live view of GPIO bit state, current band, tuner needle position with per-band wedge markers, full state dump, and grouped channel map at `http://radionette.local:8080/debug`. Includes a virtual dial for switching bands from the browser, tuner calibration buttons, WiFi reset and system reboot controls.
@@ -302,6 +303,32 @@ Different physical selector switches can produce different top-nibble values. To
 ```
 
 Keys are logical band ordinals and values are the physical top-nibble readings (`0..15`). The override persists across deployments. Set `RADIONETTE_BAND_MAPPING` to use a different file path.
+
+### Per-radio display settings
+
+The selector's lower nibble (bits 3–0) controls display content and backlight timing. Because switch encodings differ between radios, the mapping is local to each Pi. Create `~/.radionette/display-mapping.json`:
+
+```json
+{
+  "autoArtwork": 0,
+  "autoLogo": 2,
+  "alwaysArtwork": 1,
+  "alwaysLogo": 4,
+  "off": 8
+}
+```
+
+All five values must be unique integers from `0` through `15`. The modes are:
+
+- `autoArtwork` — channel logo and album art; backlight turns off after 20 seconds
+- `autoLogo` — channel logo only; backlight turns off after 20 seconds
+- `alwaysArtwork` — channel logo and album art; backlight stays on
+- `alwaysLogo` — channel logo only; backlight stays on
+- `off` — black frame and backlight off
+
+The selected timing also applies in Bluetooth mode. A debug-page logo override may temporarily turn on a physically disabled display; clearing the override restores the physical setting. If the mapping file is absent or invalid, every lower-nibble value safely falls back to normal `autoArtwork` behavior. Set `RADIONETTE_DISPLAY_MAPPING` to use another path.
+
+The default display tint is **Ember** (`R=1.15`, `G=0.60`, `B=0.30`). It can still be adjusted live from the debug page.
 
 ## Configuring Stations
 

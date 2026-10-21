@@ -418,7 +418,7 @@
       <div class="bit-label-group lbl-green" style="width:28px">pwr</div>
       <div class="bit-label-group lbl-blue" style="width:28px">bt</div>
       <div class="bit-label-group lbl-amber" style="width:118px">bank [7:4]</div>
-      <div class="bit-label-group lbl-amber" style="width:118px">sub [3:0]</div>
+      <div class="bit-label-group lbl-amber" style="width:118px">display [3:0]</div>
     </div>
     <div id="decoded-fields">
       <div class="decoded-row">
@@ -438,7 +438,7 @@
         <span class="decoded-value" id="dec-bank">---</span>
       </div>
       <div class="decoded-row">
-        <span class="decoded-label">Sub [3:0]</span>
+        <span class="decoded-label">Display [3:0]</span>
         <span class="decoded-value" id="dec-sub">---</span>
       </div>
       <div class="decoded-row">
@@ -488,6 +488,12 @@
       <span class="dial-label">Band</span>
       <div class="dial-buttons" id="dial-bank">
         <!-- Populated dynamically from s.bands. -->
+      </div>
+    </div>
+    <div class="dial-group">
+      <span class="dial-label">Display</span>
+      <div class="dial-buttons" id="dial-display">
+        <!-- Populated dynamically from s.displayOptions. -->
       </div>
     </div>
     <div class="dial-group">
@@ -664,7 +670,7 @@
       const raw = s.rawGpio || 0;
       const bin = (raw >>> 0).toString(2).padStart(11, '0');
 
-      // Bit groups: [10]=mono, [9]=power, [8]=bluetooth, [7:4]=bank, [3:0]=sub
+      // Bit groups: [10]=mono, [9]=power, [8]=bluetooth, [7:4]=bank, [3:0]=display
       // bin string index: 0=bit10, 1=bit9, 2=bit8, 3-6=bits7-4, 7-10=bits3-0
       const bitDiv = $('bit-display');
       bitDiv.innerHTML = '';
@@ -674,7 +680,7 @@
         { bits: bin.slice(1, 2), color: 'green' },    // bit 9: power
         { bits: bin.slice(2, 3), color: 'blue' },     // bit 8: bluetooth
         { bits: bin.slice(3, 7), color: 'amber' },    // bits 7-4: bank
-        { bits: bin.slice(7, 11), color: 'amber' },   // bits 3-0: sub
+        { bits: bin.slice(7, 11), color: 'amber' },   // bits 3-0: display
       ];
 
       groups.forEach((g, gi) => {
@@ -713,7 +719,8 @@
         ? bandForBits.name + ' (#' + bandForBits.ordinal + ')'
         : 'unmapped nibble 0x' + bankRaw.toString(16);
       $('dec-bank').className = 'decoded-value clr-amber';
-      $('dec-sub').textContent = 'Sub 0x' + subRaw.toString(16);
+      $('dec-sub').textContent = (s.displayMode || 'auto-artwork')
+        + ' (0x' + subRaw.toString(16) + (s.displayMapped ? '' : ', fallback') + ')';
       $('dec-sub').className = 'decoded-value clr-amber';
       $('dec-raw').textContent = raw;
 
@@ -735,7 +742,7 @@
 
       // Full state table
       const stateTable = $('state-table');
-      const stateKeys = ['power', 'mode', 'playing', 'bluetooth', 'bluetoothDevice', 'mono', 'volume', 'metadata', 'nowPlayingArtwork', 'rawGpio'];
+      const stateKeys = ['power', 'mode', 'playing', 'bluetooth', 'bluetoothDevice', 'mono', 'volume', 'displayMode', 'displayBits', 'displayMapped', 'metadata', 'nowPlayingArtwork', 'rawGpio'];
       let rows = '';
       stateKeys.forEach(k => {
         const v = s[k];
@@ -796,23 +803,21 @@
     // --- Virtual dial ---
     //
     // The physical rotary switch produces an 8-bit "channel selector"
-    // whose top nibble picks a band and whose bottom nibble is
-    // irrelevant when the AS5600 tuner is active (the needle picks the
-    // station within the band). The virtual dial mirrors that: Bank
-    // buttons inject a band's hardware nibble, sub-nibble stays 0.
+    // whose top nibble picks a band and whose bottom nibble selects the
+    // display policy. The AS5600 needle picks the station within the band.
     //
     // bandHwList is populated on every state message from s.bands so
     // the Bank buttons always match the current channels.json.
 
     let bandHwList = [];   // [{ ordinal, hardware, name }, ...]
+    let displayOptions = []; // [{ mode, bits, label }, ...]
 
     // Current virtual dial state
-    const dial = { power: 0, bt: 0, bankHw: 0, mono: 0 };
+    const dial = { power: 0, bt: 0, bankHw: 0, displayBits: 0, mono: 0 };
 
     function dialComputeRaw() {
-      // Sub-nibble is always 0 in virtual injections. The tuner (or the
-      // gpio.ts fallback) decides the actual channel from the band.
-      return (dial.mono << 10) | (dial.power << 9) | (dial.bt << 8) | (dial.bankHw << 4);
+      return (dial.mono << 10) | (dial.power << 9) | (dial.bt << 8)
+        | (dial.bankHw << 4) | dial.displayBits;
     }
 
     async function setVolume() {
@@ -860,6 +865,23 @@
       });
     }
 
+    function renderDisplayButtons() {
+      const container = $('dial-display');
+      const currentKey = displayOptions.map(o => o.mode + ':' + o.bits).join('|');
+      if (container.dataset.key === currentKey) return;
+      container.dataset.key = currentKey;
+      container.innerHTML = '';
+      displayOptions.forEach(option => {
+        const b = document.createElement('button');
+        b.className = 'dial-btn';
+        b.dataset.val = String(option.bits);
+        b.textContent = option.label;
+        b.title = option.mode + ' (0x' + option.bits.toString(16) + ')';
+        b.onclick = () => dialSet('displayBits', option.bits);
+        container.appendChild(b);
+      });
+    }
+
     function updateDialButtons() {
       const pwrBtns = $('dial-power').children;
       for (const b of pwrBtns) {
@@ -872,6 +894,10 @@
       const bankBtns = $('dial-bank').children;
       for (const b of bankBtns) {
         b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.bankHw ? ' active-amber' : '');
+      }
+      const displayBtns = $('dial-display').children;
+      for (const b of displayBtns) {
+        b.className = 'dial-btn' + (parseInt(b.dataset.val) === dial.displayBits ? ' active-amber' : '');
       }
       const monoBtns = $('dial-mono').children;
       for (const b of monoBtns) {
@@ -890,11 +916,20 @@
         renderBandButtons();
       }
 
+      const nextDisplayOptions = Array.isArray(s.displayOptions) ? s.displayOptions : [];
+      const displayChanged = nextDisplayOptions.length !== displayOptions.length
+        || nextDisplayOptions.some((o, i) => o.mode !== displayOptions[i]?.mode || o.bits !== displayOptions[i]?.bits);
+      if (displayChanged) {
+        displayOptions = nextDisplayOptions.slice();
+        renderDisplayButtons();
+      }
+
       const raw = s.rawGpio || 0;
       dial.mono = (raw >> 10) & 1;
       dial.power = (raw >> 9) & 1;
       dial.bt = (raw >> 8) & 1;
       dial.bankHw = (raw >> 4) & 0xF;
+      dial.displayBits = raw & 0xF;
       updateDialButtons();
     }
 

@@ -9,6 +9,7 @@ import { injectGpioValue, resetGpioOverride } from "./gpio";
 import { setLogoOverride, getLogoOverride, setDisplayTint, getDisplayTint } from "./display-service";
 import { setVolumeSoftware } from "./volume";
 import { calibrateTuner, invertTuner, tunerStatus } from "./tuner";
+import { getDisplayOptions } from "./display-settings";
 
 const PORT = 8080;
 
@@ -23,6 +24,7 @@ function getStatusPayload(): string {
     channels: getAllChannels(),
     logoOverride: getLogoOverride(),
     displayTint: getDisplayTint(),
+    displayOptions: getDisplayOptions(),
     tuner: tunerStatus(),
   });
 }

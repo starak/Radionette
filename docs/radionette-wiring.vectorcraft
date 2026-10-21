@@ -7806,7 +7806,7 @@
                 ],
                 "runs": [
                   {
-                    "text": "Each active contact connects its GPIO to 3.3 V. Software enables an internal pull-down. LOW = inactive; stereo input LOW selects mono.",
+                    "text": "Bits 7–4: per-radio band mapping. Bits 3–0: per-radio display policy. Inputs use internal pull-downs.",
                     "style": {
                       "font_family": "Inter",
                       "font_style": "Regular",
@@ -17303,7 +17303,7 @@
       "copyrightNotice": "",
       "copyrightUrl": "",
       "created": 1792422832,
-      "modified": 1792589752
+      "modified": 1792601520
     }
   },
   "images": {}

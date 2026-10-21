@@ -24,7 +24,7 @@ export interface Tint {
 
 // Default warm tint. This is a retro radio — push hard toward incandescent /
 // candle-flame warmth (~3000 K and below). Tweak via setTint() at runtime.
-const DEFAULT_TINT: Tint = { r: 1.1, g: 0.75, b: 0.5 };
+const DEFAULT_TINT: Tint = { r: 1.15, g: 0.6, b: 0.3 };
 
 let tint: Tint = { ...DEFAULT_TINT };
 

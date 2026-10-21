@@ -26,6 +26,7 @@ import { displayController } from "./render/displayController";
 import { loadLogo, clearLogoCache, resolveLogoPath } from "./render/logos";
 import { setTint, getTint, Tint } from "./render/frame";
 import { setBacklightOverrideLock } from "./backlight";
+import { displayModeAllowsArtwork } from "./display-settings";
 
 export interface DisplayServiceOptions {
   dcPin: number;
@@ -68,6 +69,7 @@ function pickLogoForState(s: RadioState): string | null {
   // the radio is powered on. Power-off still wins so we don't burn pixels
   // with a forced logo on a "off" panel.
   if (logoOverride) return logoOverride;
+  if (s.displayMode === "off") return null;
   if (s.mode === "bluetooth") {
     return s.bluetoothDevice
       ? opts!.bluetoothConnectedLogo
@@ -81,7 +83,13 @@ function pickLogoForState(s: RadioState): string | null {
     // identity before the current song's art takes over.
     const sinceChannel = Date.now() - channelChangedAt;
     const artAllowed = sinceChannel >= CHANNEL_LOGO_LINGER_MS;
-    if (artAllowed && s.nowPlayingArtwork?.url) return s.nowPlayingArtwork.url;
+    if (
+      artAllowed &&
+      displayModeAllowsArtwork(s.displayMode) &&
+      s.nowPlayingArtwork?.url
+    ) {
+      return s.nowPlayingArtwork.url;
+    }
     if (s.channel) {
       // If the channel has a real logo file, use it. Otherwise generate a
       // text tile from the channel name so we never fall through to the
@@ -147,6 +155,15 @@ function handlePowerOn(): void {
   clearSplash();
   clearLingerTimer();
   channelChangedAt = 0;
+  // Physical display-off suppresses the splash. A debug logo override is
+  // allowed to bypass display-off, but should appear directly, not behind the
+  // normal power-on splash.
+  if (radioState.state.displayMode === "off" || logoOverride) {
+    splashActive = false;
+    lastApplied = undefined;
+    applyState(radioState.state);
+    return;
+  }
   const splashLogo = opts!.defaultLogo;
   splashActive = true;
   lastApplied = splashLogo;

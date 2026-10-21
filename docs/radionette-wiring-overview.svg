@@ -71,7 +71,7 @@
     <text transform="matrix(1 0 0 1 80 458)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">Stereo select</tspan></text>
     <text transform="matrix(1 0 0 1 300 458)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#2563eb"><tspan x="0" y="0">BCM 19</tspan></text>
     <text transform="matrix(1 0 0 1 430 458)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#64748b"><tspan x="0" y="0">pin 35</tspan></text>
-    <text transform="matrix(1 0 0 1 80 520)" x="0" y="12.594" xml:space="preserve" font-family="Inter" font-size="13" fill="#1e3a8a"><tspan x="0" y="12.594">Each active contact connects its GPIO to 3.3 V. Software enables an</tspan><tspan x="0" y="28.194">internal pull-down. LOW = inactive; stereo input LOW selects mono.</tspan></text>
+    <text transform="matrix(1 0 0 1 80 520)" x="0" y="12.594" xml:space="preserve" font-family="Inter" font-size="13" fill="#1e3a8a"><tspan x="0" y="12.594">Bits 7–4: per-radio band mapping. Bits 3–0: per-radio display policy.</tspan><tspan x="0" y="28.194">Inputs use internal pull-downs.</tspan></text>
     <text transform="matrix(1 0 0 1 80 714)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="17" fill="#0f766e"><tspan x="0" y="0">ADS1115 — address 0x48</tspan></text>
     <text transform="matrix(1 0 0 1 80 742)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">VDD → 3V3 (pin 1 or 17)</tspan></text>
     <text transform="matrix(1 0 0 1 80 765)" x="0" y="0" xml:space="preserve" font-family="Inter" font-size="13" fill="#0f172a"><tspan x="0" y="0">GND → Pi GND</tspan></text>

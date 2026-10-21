@@ -1,5 +1,6 @@
 import consolestamp from "console-stamp";
 import { loadChannels } from "./channels";
+import { loadDisplayMapping } from "./display-settings";
 import { initPlayer, stopPlayer } from "./player";
 import { initBluetooth, stopBluetooth } from "./bluetooth";
 import { initHotspotAlert, stopHotspotAlert } from "./hotspot-alert";
@@ -32,7 +33,8 @@ consolestamp(console, { format: ":date(yyyy-mm-dd HH:MM:ss.l)" });
 console.log("=== Radionette ===");
 console.log("Starting up...\n");
 
-// 1. Load channel configuration
+// 1. Load per-radio display wiring and channel configuration
+loadDisplayMapping();
 loadChannels();
 
 // 2. Initialize player (subscribes to state events)

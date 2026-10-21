@@ -1,4 +1,5 @@
 import { EventEmitter } from "events";
+import { DisplayMode, DisplaySetting } from "./display-settings";
 
 export type Mode = "off" | "bluetooth" | "radio";
 
@@ -25,6 +26,9 @@ export interface RadioState {
   mono: boolean;
   volume: number;
   rawGpio: number;
+  displayMode: DisplayMode;
+  displayBits: number;
+  displayMapped: boolean;
   // Tuner (AS5600 over I2C). null when the tuner is disabled or hasn't
   // produced its first reading yet.
   tunerFraction: number | null;    // 0..1 across the calibrated sweep
@@ -58,6 +62,7 @@ export interface RadioEvents {
   "volume:change": [volume: number];
   "tuner:change": [fraction: number, band: number];
   "artwork:change": [artwork: NowPlayingArtwork | null];
+  "display:mode": [setting: DisplaySetting];
   "state:change": [state: RadioState];
 }
 
@@ -73,6 +78,9 @@ class RadioStateEmitter extends EventEmitter {
     mono: false,
     volume: 100,
     rawGpio: 0,
+    displayMode: "auto-artwork",
+    displayBits: 0,
+    displayMapped: false,
     tunerFraction: null,
     tunerRaw: null,
     tunerBand: 0,
@@ -165,6 +173,19 @@ class RadioStateEmitter extends EventEmitter {
 
   setRawGpio(value: number): void {
     this._state.rawGpio = value;
+  }
+
+  setDisplaySetting(setting: DisplaySetting): void {
+    const changed =
+      this._state.displayMode !== setting.mode ||
+      this._state.displayBits !== setting.bits ||
+      this._state.displayMapped !== setting.mapped;
+    if (!changed) return;
+    this._state.displayMode = setting.mode;
+    this._state.displayBits = setting.bits;
+    this._state.displayMapped = setting.mapped;
+    this.emit("display:mode", setting);
+    this.emitStateChange();
   }
 
   setBluetoothDevice(name: string | null): void {
