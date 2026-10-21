@@ -292,6 +292,7 @@ The settings page and `/api/settings/*` APIs use a PIN with an 8-hour session co
 npm install          # Install dependencies
 npm run build        # Compile backend + build the Svelte frontend
 npm run check:web    # Type-check Svelte components
+npm run format:web   # Format Svelte/TypeScript/CSS with Prettier
 npm run dev          # Watch backend TypeScript
 npm run dev:web      # Vite frontend dev server (proxies to radionette.local)
 npm run deploy       # Build + deploy to Pi + restart

@@ -319,6 +319,7 @@ The backend is TypeScript; the frontend is Svelte 5 + Vite + TypeScript. The Pi 
 npm install          # Install dependencies (dev machine)
 npm run build        # Backend TypeScript + Vite production bundle
 npm run check:web    # Svelte/TypeScript diagnostics
+npm run format:web   # Prettier with the Svelte plugin
 npm run dev          # Backend TypeScript watch mode
 npm run dev:web      # Vite dev server with Pi API/WebSocket proxies
 ```
