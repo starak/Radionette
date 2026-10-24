@@ -39,6 +39,8 @@ import {
   verifySettingsPin,
   verifySettingsSession,
 } from "./settings-security";
+import { getSpotifySettingsStatus, saveSpotifyApiKey } from "./spotify-settings";
+import { restartSpotifyConnect } from "./spotify-connect";
 
 const PORT = 8080;
 
@@ -124,6 +126,7 @@ function getSettingsBundle(): object {
     bandMapping: getBandMapping(),
     displayMapping: getDisplayMapping(),
     displayPreferences: getDisplayPreferences(),
+    spotify: getSpotifySettingsStatus(),
     rawGpio: radioState.state.rawGpio,
   };
 }
@@ -356,6 +359,18 @@ export function startWebServer(): void {
         await setDisplayTint(tint);
         broadcast(getStatusPayload());
         sendJson(res, 200, { success: true, tint });
+      } catch (err: any) {
+        sendJson(res, 400, { success: false, error: err.message });
+      }
+      return;
+    }
+
+    if (req.url === "/api/settings/spotify" && req.method === "PUT") {
+      try {
+        const { apiKey } = await readJsonBody(req, 10_000);
+        const spotify = saveSpotifyApiKey(apiKey);
+        restartSpotifyConnect();
+        sendJson(res, 200, { success: true, spotify });
       } catch (err: any) {
         sendJson(res, 400, { success: false, error: err.message });
       }

@@ -27,6 +27,7 @@ import { loadLogo, clearLogoCache, resolveLogoPath } from "./render/logos";
 import { setTint, getTint, Tint } from "./render/frame";
 import { setBacklightOverrideLock } from "./backlight";
 import { displayModeAllowsArtwork } from "./display-settings";
+import { SPOTIFY_BAND_ORDINAL } from "./spotify-connect";
 
 export interface DisplayServiceOptions {
   dcPin: number;
@@ -83,6 +84,18 @@ function pickLogoForState(s: RadioState): string | null {
     // identity before the current song's art takes over.
     const sinceChannel = Date.now() - channelChangedAt;
     const artAllowed = sinceChannel >= CHANNEL_LOGO_LINGER_MS;
+    // Spotify has its own dedicated idle logo. Cover art still respects the
+    // physical artwork/logo-only selector, just like ordinary radio stations.
+    if (s.selectedBand === SPOTIFY_BAND_ORDINAL) {
+      if (
+        artAllowed &&
+        displayModeAllowsArtwork(s.displayMode) &&
+        s.nowPlayingArtwork?.url
+      ) {
+        return s.nowPlayingArtwork.url;
+      }
+      return "spotify.svg";
+    }
     if (
       artAllowed &&
       displayModeAllowsArtwork(s.displayMode) &&

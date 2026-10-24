@@ -90,6 +90,15 @@ export function loadChannels(configPath?: string): void {
   try {
     const raw = fs.readFileSync(filePath, "utf-8");
     config = validateChannelsConfig(JSON.parse(raw));
+    // Band 4 became the dedicated Spotify Connect input. Preserve genuinely
+    // custom names, but update the old generated/default label in existing
+    // per-radio channels files so deployed radios do not keep showing
+    // "Band 4" indefinitely. The next settings save persists the new label.
+    config.bands = config.bands.map((band) =>
+      band.ordinal === 4 && band.name === "Band 4"
+        ? { ...band, name: "Spotify" }
+        : band,
+    );
   } catch (err) {
     console.error(`[Channels] Failed to read ${filePath}:`, err);
     return;

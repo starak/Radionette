@@ -4,7 +4,7 @@
     { "ordinal": 1, "hardware": 12, "name": "Norsk" },
     { "ordinal": 2, "hardware": 8,  "name": "BBC" },
     { "ordinal": 3, "hardware": 10, "name": "Band 3" },
-    { "ordinal": 4, "hardware": 3,  "name": "Band 4" }
+    { "ordinal": 4, "hardware": 3,  "name": "Spotify" }
   ],
   "channels": [
     { "id": "nrk-p1",       "band": 1, "order": 10,  "name": "NRK P1",             "url": "https://lyd.nrk.no/icecast/mp3/high/s0w7hwn47m/p1_dk8",      "logo": "NRK-P1.png" },

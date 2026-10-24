@@ -72,6 +72,12 @@ function processValue(rawValue: number): void {
   const displaySetting = resolveDisplaySetting(channelBits & 0x0f);
 
   radioState.setRawGpio(rawValue);
+  const bandNibble = (channelBits >> 4) & 0x0f;
+  const bandOrdinal = bandForHardware(bandNibble) ?? 0;
+  // Publish the selected logical band even while power is off or Bluetooth is
+  // active. Consumers such as the Spotify Connect gate combine it with mode
+  // and power, and therefore see one authoritative selector value.
+  radioState.setSelectedBand(bandOrdinal);
   // Apply display policy before power:on so a display-off selection cannot
   // flash the splash screen and always-on is active from the first frame.
   radioState.setDisplaySetting(displaySetting);
@@ -99,8 +105,6 @@ function processValue(rawValue: number): void {
   // Top nibble of the channel selector = band selector on the physical
   // rotary. Translate to a band ordinal via channels.json. Unmapped
   // nibbles pass through as band=0 (silence).
-  const bandNibble = (channelBits >> 4) & 0x0f;
-  const bandOrdinal = bandForHardware(bandNibble) ?? 0;
   setTunerBand(bandOrdinal);
 
   if (isTunerActive()) {

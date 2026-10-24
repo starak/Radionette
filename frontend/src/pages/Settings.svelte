@@ -15,6 +15,7 @@
   let currentPin = "";
   let newPin = "";
   let confirmPin = "";
+  let spotifyApiKey = "";
   const displayFields: Array<[keyof DisplayMapping, string]> = [
     ["autoArtwork", "Auto · logo + artwork"],
     ["autoLogo", "Auto · logo only"],
@@ -191,6 +192,22 @@
       notify((e as Error).message, false);
     }
   }
+  async function saveSpotify() {
+    if (!model) return;
+    if (!spotifyApiKey.trim()) return notify("Paste a Spotify Soloist API key first", false);
+    try {
+      const r: any = await api("/api/settings/spotify", {
+        method: "PUT",
+        body: JSON.stringify({ apiKey: spotifyApiKey }),
+      });
+      model.spotify = r.spotify;
+      spotifyApiKey = "";
+      model = { ...model };
+      notify("Spotify Soloist configured");
+    } catch (e) {
+      notify((e as Error).message, false);
+    }
+  }
   async function importSettings() {
     if (!importFile) return notify("Choose a JSON backup first", false);
     if (!confirm("Replace this radio's local settings?")) return;
@@ -305,6 +322,32 @@
           <button on:click={() => setTint(1.15, 0.6, 0.3)}>Ember</button>
           <button class="primary" on:click={saveTint}>Save default</button>
         </div>
+      </section>
+
+      <section class="card">
+        <h2>Spotify Connect</h2>
+        <p>
+          Band 4 uses Spotify’s official Soloist player. Generate a private key in the
+          <a href="https://developer.spotify.com/dashboard/soloist" target="_blank" rel="noreferrer"
+            >Spotify Soloist dashboard</a
+          >, then save it here.
+        </p>
+        <label>
+          Soloist API key
+          <input
+            type="password"
+            autocomplete="off"
+            placeholder={model.spotify.configured
+              ? "Configured — paste to replace"
+              : "Paste API key"}
+            bind:value={spotifyApiKey}
+          />
+        </label>
+        <div class="actions">
+          <button class="primary" on:click={saveSpotify}>Save Spotify key</button>
+          <span class="pill">{model.spotify.configured ? "Configured" : "Not configured"}</span>
+        </div>
+        <small>The key stays on this radio and is excluded from settings exports.</small>
       </section>
 
       <section class="card">

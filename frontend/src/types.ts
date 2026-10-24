@@ -21,6 +21,14 @@ export interface Artwork {
   artist: string;
   title: string;
 }
+export interface SpotifyQueueItem {
+  uid: string;
+  uri: string;
+  title: string;
+  artist: string;
+  artworkUrl: string | null;
+  source: string;
+}
 export interface TunerStatus {
   ready: boolean;
   calibration: { minAngle: number; maxAngle: number; invert: boolean };
@@ -41,11 +49,14 @@ export interface RadioStatus {
   metadata: string | null;
   mono: boolean;
   volume: number;
+  volumeSource: "knob" | "spotify" | "software";
   rawGpio: number;
+  selectedBand: number;
   tunerFraction: number | null;
   tunerRaw: number | null;
   tunerBand: number;
   nowPlayingArtwork: Artwork | null;
+  spotifyQueue: SpotifyQueueItem[];
   displayMode: string;
   displayBits: number;
   displayMapped: boolean;
@@ -73,6 +84,7 @@ export interface SettingsBundle {
   bandMapping: Record<string, number>;
   displayMapping: DisplayMapping | null;
   displayPreferences: { tint: { r: number; g: number; b: number } };
+  spotify: { configured: boolean; provider: "soloist" };
   rawGpio: number;
 }
 export interface WifiStatus {

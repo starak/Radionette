@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { DisplayMode, DisplaySetting } from "./display-settings";
 
 export type Mode = "off" | "bluetooth" | "radio";
+export type VolumeSource = "knob" | "spotify" | "software";
 
 export interface ChannelInfo {
   /** Stable string identifier — key in the channel index. */
@@ -25,7 +26,10 @@ export interface RadioState {
   metadata: string | null;
   mono: boolean;
   volume: number;
+  volumeSource: VolumeSource;
   rawGpio: number;
+  /** Logical band selected by the physical rotary, or 0 when unmapped. */
+  selectedBand: number;
   displayMode: DisplayMode;
   displayBits: number;
   displayMapped: boolean;
@@ -40,12 +44,22 @@ export interface RadioState {
    * don't have artwork (no metadata parsed, talk radio, iTunes miss).
    */
   nowPlayingArtwork: NowPlayingArtwork | null;
+  spotifyQueue: SpotifyQueueItem[];
 }
 
 export interface NowPlayingArtwork {
   url: string;
   artist: string;
   title: string;
+}
+
+export interface SpotifyQueueItem {
+  uid: string;
+  uri: string;
+  title: string;
+  artist: string;
+  artworkUrl: string | null;
+  source: string;
 }
 
 export interface RadioEvents {
@@ -60,6 +74,7 @@ export interface RadioEvents {
   "mono:on": [];
   "mono:off": [];
   "volume:change": [volume: number];
+  "band:change": [band: number];
   "tuner:change": [fraction: number, band: number];
   "artwork:change": [artwork: NowPlayingArtwork | null];
   "display:mode": [setting: DisplaySetting];
@@ -77,7 +92,9 @@ class RadioStateEmitter extends EventEmitter {
     metadata: null,
     mono: false,
     volume: 100,
+    volumeSource: "knob",
     rawGpio: 0,
+    selectedBand: 0,
     displayMode: "auto-artwork",
     displayBits: 0,
     displayMapped: false,
@@ -85,6 +102,7 @@ class RadioStateEmitter extends EventEmitter {
     tunerRaw: null,
     tunerBand: 0,
     nowPlayingArtwork: null,
+    spotifyQueue: [],
   };
 
   get state(): Readonly<RadioState> {
@@ -175,6 +193,14 @@ class RadioStateEmitter extends EventEmitter {
     this._state.rawGpio = value;
   }
 
+  setSelectedBand(band: number): void {
+    const value = band | 0;
+    if (this._state.selectedBand === value) return;
+    this._state.selectedBand = value;
+    this.emit("band:change", value);
+    this.emitStateChange();
+  }
+
   setDisplaySetting(setting: DisplaySetting): void {
     const changed =
       this._state.displayMode !== setting.mode ||
@@ -205,10 +231,11 @@ class RadioStateEmitter extends EventEmitter {
     this.emitStateChange();
   }
 
-  setVolume(percent: number): void {
+  setVolume(percent: number, source: VolumeSource = this._state.volumeSource): void {
     const clamped = Math.max(0, Math.min(100, percent));
-    if (this._state.volume === clamped) return;
+    if (this._state.volume === clamped && this._state.volumeSource === source) return;
     this._state.volume = clamped;
+    this._state.volumeSource = source;
     this.emit("volume:change", clamped);
     this.emitStateChange();
   }
@@ -244,6 +271,49 @@ class RadioStateEmitter extends EventEmitter {
     }
     this._state.nowPlayingArtwork = artwork;
     this.emit("artwork:change", artwork);
+    this.emitStateChange();
+  }
+
+  /**
+   * Update playback owned by an external player such as Spotify Soloist.
+   * Unlike setPlaying/setMetadata this deliberately does not emit the stream
+   * player's metadata/stopped events, which would invoke the iTunes artwork
+   * lookup and overwrite Soloist's authoritative cover art.
+   */
+  setExternalPlayback(
+    playing: boolean,
+    metadata: string | null,
+    artwork: NowPlayingArtwork | null,
+  ): void {
+    const current = this._state.nowPlayingArtwork;
+    const changed =
+      this._state.playing !== playing ||
+      this._state.metadata !== metadata ||
+      current?.url !== artwork?.url ||
+      current?.artist !== artwork?.artist ||
+      current?.title !== artwork?.title;
+    if (!changed) return;
+    this._state.playing = playing;
+    this._state.metadata = metadata;
+    this._state.nowPlayingArtwork = artwork;
+    this.emitStateChange();
+  }
+
+  setSpotifyQueue(queue: SpotifyQueueItem[]): void {
+    const unchanged =
+      this._state.spotifyQueue.length === queue.length &&
+      this._state.spotifyQueue.every((item, index) => {
+        const next = queue[index];
+        return (
+          item.uid === next?.uid &&
+          item.title === next?.title &&
+          item.artist === next?.artist &&
+          item.artworkUrl === next?.artworkUrl &&
+          item.source === next?.source
+        );
+      });
+    if (unchanged) return;
+    this._state.spotifyQueue = queue;
     this.emitStateChange();
   }
 

@@ -71,9 +71,43 @@ sudo apt-get install -y -qq \
   pulseaudio-utils \
   pulseaudio-module-bluetooth \
   i2c-tools \
+  ca-certificates \
+  curl \
   build-essential \
   python3
 ok "System packages installed"
+
+# ---------- 1b. Spotify Connect speaker ----------
+
+# Spotify Soloist is Spotify's official Connect/Jam client and uses the same
+# playback engine as Spotify's first-party apps. Radionette starts it only
+# while logical Band 4 is selected. Soloist builds expire after 90 days, so
+# setup always downloads the current archive from Spotify's stable URL.
+case "$(uname -m)" in
+  aarch64|arm64)
+    SOLOIST_ARCH="arm64"
+    ;;
+  armv7l)
+    SOLOIST_ARCH="arm32"
+    ;;
+  x86_64)
+    SOLOIST_ARCH="x86_64"
+    ;;
+  *)
+    fail "Spotify Soloist does not provide a build for architecture $(uname -m)"
+    ;;
+esac
+
+info "Installing current Spotify Soloist build..."
+SOLOIST_TMP=$(mktemp -d)
+curl -fsSL \
+  "https://soloist-builds.spotifycdn.com/soloist_release_${SOLOIST_ARCH}.tar.gz" \
+  -o "${SOLOIST_TMP}/soloist.tar.gz"
+tar -xzf "${SOLOIST_TMP}/soloist.tar.gz" -C "${SOLOIST_TMP}"
+test -x "${SOLOIST_TMP}/soloist" || fail "Spotify Soloist executable was not found in the archive"
+sudo install -m 0755 "${SOLOIST_TMP}/soloist" /usr/local/bin/soloist
+rm -rf "${SOLOIST_TMP}"
+ok "$(/usr/local/bin/soloist --version | head -n 1) installed for Band 4"
 
 # ---------- 2. Enable SPI + I2C in /boot/firmware/config.txt ----------
 

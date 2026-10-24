@@ -423,6 +423,19 @@ export function setTunerBand(bandOrdinal: number): void {
   channelOverrideFraction = null;
   lastAppliedChannelId = null;
   lastCommittedFraction = null;
+
+  // Clear the station immediately when entering an empty band. Previously we
+  // reset lastAppliedChannelId above and then commitSilence() treated the next
+  // poll as already silent, leaving the previous band's stream playing. Band
+  // 4 intentionally has no stream channels because Spotify Soloist owns it.
+  if (
+    channelsForBand(currentBand).length === 0 &&
+    radioState.state.power &&
+    radioState.state.mode === "radio"
+  ) {
+    console.log(`[Tuner] band=${currentBand} has no channels — silence`);
+    radioState.setChannel(null);
+  }
 }
 
 export function setTunerChannelOverride(channel: ChannelInfo | null): void {

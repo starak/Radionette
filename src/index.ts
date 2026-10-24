@@ -16,6 +16,7 @@ import { initVolume, stopVolume } from "./volume";
 import { initTuner, stopTuner } from "./tuner";
 import { initArtwork, stopArtwork } from "./artwork";
 import { initStaticNoise, stopStaticNoise } from "./static-noise";
+import { initSpotifyConnect, stopSpotifyConnect } from "./spotify-connect";
 import {
   initDisplayService,
   stopDisplayService,
@@ -57,6 +58,10 @@ initAudio();
 //     Must come BEFORE initTuner() / startGpio() so their first channel
 //     transitions can trigger it.
 initStaticNoise();
+
+// 5c. Spotify Connect is exposed only while logical Band 4 is selected.
+//     Initialize before GPIO so the first selector reading is observed.
+initSpotifyConnect();
 
 // 6. Start web server (subscribes to state events)
 startWebServer();
@@ -116,6 +121,7 @@ async function shutdown(): Promise<void> {
   stopVolume();
   stopArtwork();
   stopStaticNoise();
+  await stopSpotifyConnect();
   stopTuner();
   stopAdc();
   // Stop backlight before gpio.ts closes the pin.

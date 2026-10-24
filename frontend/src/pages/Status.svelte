@@ -15,16 +15,20 @@
   function getStation(v: RadioStatus | null) {
     if (!v?.power) return "Radionette";
     if (v.mode === "bluetooth") return v.bluetoothDevice || "Bluetooth";
+    if (v.selectedBand === 4) return "Spotify";
     return v.channel?.name || "Radionette";
   }
 
   function getArtwork(v: RadioStatus | null): string | null {
     if (!v) return null;
-    if (v.nowPlayingArtwork?.url && ["auto-artwork", "always-artwork"].includes(v.displayMode)) {
-      return v.nowPlayingArtwork.url;
-    }
     if (v.mode === "bluetooth") {
       return v.bluetoothDevice ? "/logos/bluetooth-connected.png" : "/logos/bluetooth.png";
+    }
+    // The web dashboard is not constrained by the physical display selector's
+    // logo-only mode. Always prefer Soloist's authoritative cover artwork.
+    if (v.selectedBand === 4) return v.nowPlayingArtwork?.url || "/logos/spotify.svg";
+    if (v.nowPlayingArtwork?.url && ["auto-artwork", "always-artwork"].includes(v.displayMode)) {
+      return v.nowPlayingArtwork.url;
     }
     if (v.channel) return v.channel.logo ? `/logos/${encodeURIComponent(v.channel.logo)}` : null;
     return "/logos/default.png";
@@ -35,12 +39,15 @@
     if (v.mode === "bluetooth") {
       return v.bluetoothDevice ? "Connected and ready" : "Waiting for a device…";
     }
+    if (v.selectedBand === 4)
+      return v.metadata || "Select Radionette in the Spotify app, then start a Jam";
     if (v.channel) return v.metadata || "Waiting for now-playing information…";
     return "No station selected";
   }
   function eyebrow(v: RadioStatus | null) {
     if (!v?.power) return "Radio offline";
     if (v.mode === "bluetooth") return "Bluetooth";
+    if (v.selectedBand === 4) return v.playing ? "Now playing · Spotify" : "Spotify Connect";
     return v.playing ? "Now playing" : "Tuned";
   }
 </script>
@@ -61,11 +68,13 @@
         <div class="eyebrow">{eyebrow(s)}</div>
         <h1>{station}</h1>
         <div class="track">{track(s)}</div>
-        <div class="sub">
-          {s?.nowPlayingArtwork
-            ? `${s.nowPlayingArtwork.artist} · ${s.nowPlayingArtwork.title}`
-            : "Internet radio"}
-        </div>
+        {#if s?.selectedBand !== 4}
+          <div class="sub">
+            {s?.nowPlayingArtwork
+              ? `${s.nowPlayingArtwork.artist} · ${s.nowPlayingArtwork.title}`
+              : "Internet radio"}
+          </div>
+        {/if}
         <div class="chips">
           <span class:live={s?.playing} class="pill">
             {s?.playing ? "● Playing" : "Stopped"}
@@ -75,12 +84,32 @@
           <span class="pill">{s?.displayMode?.replaceAll("-", " ") || "display"}</span>
         </div>
         <div class="volume">
-          <span>Volume</span>
+          <span>Volume · {s?.volumeSource || "knob"}</span>
           <div><i style={`width:${s?.volume || 0}%`}></i></div>
           <b>{s?.volume || 0}%</b>
         </div>
       </div>
     </section>
+    {#if s?.selectedBand === 4 && s.spotifyQueue?.length}
+      <div class="section-title">Up next</div>
+      <section class="card queue">
+        {#each s.spotifyQueue as item, index (item.uid)}
+          <div class="queue-row">
+            <span class="queue-number">{index + 1}</span>
+            <div class="queue-cover">
+              {#if item.artworkUrl}
+                <img src={item.artworkUrl} alt="" />
+              {/if}
+            </div>
+            <div class="queue-info">
+              <b>{item.title}</b>
+              <span>{item.artist}</span>
+            </div>
+            <span class="queue-source">{item.source}</span>
+          </div>
+        {/each}
+      </section>
+    {/if}
     <div class="section-title">Stations</div>
     <section class="bands">
       {#each s?.bands || [] as band}
@@ -209,6 +238,52 @@
     color: var(--muted);
     font-size: 0.75rem;
   }
+  .queue {
+    padding: 0.45rem;
+  }
+  .queue-row {
+    display: grid;
+    grid-template-columns: 28px 52px minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.55rem;
+    border-radius: 10px;
+  }
+  .queue-row + .queue-row {
+    border-top: 1px solid var(--line);
+  }
+  .queue-number,
+  .queue-source,
+  .queue-info span {
+    color: var(--muted);
+    font-size: 0.76rem;
+  }
+  .queue-cover {
+    width: 52px;
+    height: 52px;
+    border-radius: 7px;
+    overflow: hidden;
+    background: #000;
+  }
+  .queue-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .queue-info {
+    min-width: 0;
+    display: grid;
+    gap: 0.18rem;
+  }
+  .queue-info b,
+  .queue-info span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .queue-source {
+    text-transform: capitalize;
+  }
   .bands {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -258,6 +333,16 @@
     }
     .chips {
       justify-content: center;
+    }
+    .queue-row {
+      grid-template-columns: 22px 44px minmax(0, 1fr);
+    }
+    .queue-cover {
+      width: 44px;
+      height: 44px;
+    }
+    .queue-source {
+      display: none;
     }
     .volume {
       text-align: left;

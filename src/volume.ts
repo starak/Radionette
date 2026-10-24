@@ -1,6 +1,11 @@
 import { execFile } from "child_process";
 import { radioState } from "./state";
 import { ADC_MUX_AIN0, isAdcReady, readAdcChannel } from "./adc";
+import {
+  onSpotifyVolumeChanged,
+  setSpotifyVolume,
+  SPOTIFY_BAND_ORDINAL,
+} from "./spotify-connect";
 
 // ── Tuning constants ───────────────────────────────────────────────────
 
@@ -8,12 +13,17 @@ import { ADC_MUX_AIN0, isAdcReady, readAdcChannel } from "./adc";
 const POLL_INTERVAL_MS = 100;
 
 // Rolling average window size for smoothing noisy pot readings.
-// At 100ms poll, 10 samples = 1 second window.
-const SMOOTH_WINDOW = 10;
+// At 100ms poll, 15 samples = 1.5 seconds. A trimmed mean below discards the
+// three highest and lowest samples, rejecting pot/ADC spikes without making
+// deliberate turns excessively sluggish.
+const SMOOTH_WINDOW = 15;
 
 // Only update PulseAudio when smoothed percentage changes by at least this much.
 // Prevents constant pactl calls from ADC jitter at percentage boundaries.
-const CHANGE_THRESHOLD = 2;
+const CHANGE_THRESHOLD = 3;
+const FAST_CHANGE_THRESHOLD = 6;
+const STABLE_CHANGE_MS = 300;
+const PICKUP_TOLERANCE = 2;
 
 // Only log when raw value changes by this much (reduces log spam from noise)
 const LOG_THRESHOLD = 200;
@@ -43,6 +53,14 @@ let lastLoggedRaw: number | null = null;
 
 // Timestamp of the last log message (for debouncing)
 let lastLogTime = 0;
+let lastObservedPercent: number | null = null;
+let candidatePercent: number | null = null;
+let candidateSince = 0;
+let spotifyTakeoverTarget: number | null = null;
+let previousPickupVolume: number | null = null;
+let pendingSpotifyEcho: { volume: number; expiresAt: number } | null = null;
+let unsubscribeSpotifyVolume: (() => void) | null = null;
+let spotifySessionInitialized = false;
 
 // ── Conversion & smoothing ─────────────────────────────────────────────
 
@@ -68,9 +86,11 @@ function smoothedPercent(raw: number): number {
     rawHistory.shift();
   }
 
-  // Simple arithmetic mean
-  const sum = rawHistory.reduce((a, b) => a + b, 0);
-  const avg = sum / rawHistory.length;
+  const sorted = [...rawHistory].sort((a, b) => a - b);
+  const trim = sorted.length >= 9 ? Math.min(3, Math.floor((sorted.length - 1) / 4)) : 0;
+  const kept = trim ? sorted.slice(trim, -trim) : sorted;
+  const sum = kept.reduce((a, b) => a + b, 0);
+  const avg = sum / kept.length;
   return rawToPercent(avg);
 }
 
@@ -132,6 +152,98 @@ async function setAllSinksVolume(knobPercent: number): Promise<void> {
   }
 }
 
+async function setAllSinksPaVolume(paPercent: number): Promise<void> {
+  const sinks = await listAllSinks();
+  const volArg = `${Math.max(0, Math.min(100, Math.round(paPercent)))}%`;
+  for (const sink of sinks) await pactl("set-sink-volume", sink, volArg);
+}
+
+function spotifyBandActive(): boolean {
+  const state = radioState.state;
+  return state.power && state.mode === "radio" && state.selectedBand === SPOTIFY_BAND_ORDINAL;
+}
+
+function applyPhysicalVolume(percent: number, now = Date.now(), force = false): void {
+  const paPercent = applyCurve(percent);
+  if (!force && lastAppliedPercent !== null && Math.abs(percent - lastAppliedPercent) < CHANGE_THRESHOLD) return;
+  lastAppliedPercent = percent;
+  candidatePercent = null;
+
+  if (now - lastLogTime >= LOG_DEBOUNCE_MS) {
+    console.log(`[Volume] Setting volume to ${paPercent}% (knob ${percent}%)`);
+    lastLogTime = now;
+  }
+
+  if (spotifyBandActive()) {
+    pendingSpotifyEcho = { volume: paPercent, expiresAt: now + 3000 };
+    if (setSpotifyVolume(paPercent)) {
+      // In Spotify mode Soloist is the sole attenuator. Keeping the hardware
+      // sink at unity avoids multiplying two independent percentage curves.
+      setAllSinksPaVolume(100).catch((err) =>
+        console.warn(`[Volume] Failed to set Spotify hardware unity: ${err}`),
+      );
+      spotifySessionInitialized = true;
+    }
+  } else {
+    setAllSinksVolume(percent).catch((err) =>
+      console.warn(`[Volume] Failed to set volume: ${err}`),
+    );
+  }
+  radioState.setVolume(paPercent, "knob");
+}
+
+function onSpotifyVolume(volume: number): void {
+  if (!spotifyBandActive()) return;
+  const now = Date.now();
+
+  // Soloist may restore a stale/high session volume. Before exposing the
+  // hardware sink at unity, seed Soloist from the physical knob so startup
+  // can never produce a full-volume burst.
+  if (!spotifySessionInitialized && lastObservedPercent !== null) {
+    const safeVolume = applyCurve(lastObservedPercent);
+    pendingSpotifyEcho = { volume: safeVolume, expiresAt: now + 3000 };
+    if (setSpotifyVolume(safeVolume)) {
+      spotifySessionInitialized = true;
+      setAllSinksPaVolume(100).catch((err) =>
+        console.warn(`[Volume] Failed to set Spotify hardware unity: ${err}`),
+      );
+      radioState.setVolume(safeVolume, "knob");
+      console.log(`[Volume] Seeded Spotify from physical knob at ${safeVolume}%`);
+    }
+    return;
+  }
+
+  if (
+    pendingSpotifyEcho &&
+    now <= pendingSpotifyEcho.expiresAt &&
+    Math.abs(volume - pendingSpotifyEcho.volume) <= 1
+  ) {
+    pendingSpotifyEcho = null;
+    return;
+  }
+
+  pendingSpotifyEcho = null;
+  spotifyTakeoverTarget = volume;
+  previousPickupVolume = lastObservedPercent === null ? null : applyCurve(lastObservedPercent);
+  candidatePercent = null;
+  radioState.setVolume(volume, "spotify");
+  console.log(`[Volume] Spotify took control at ${volume}%; move knob to that level to pick up`);
+}
+
+function onBandChange(band: number): void {
+  pendingSpotifyEcho = null;
+  if (band === SPOTIFY_BAND_ORDINAL) {
+    spotifySessionInitialized = false;
+    return;
+  }
+  spotifySessionInitialized = false;
+  spotifyTakeoverTarget = null;
+  previousPickupVolume = null;
+  if (lastObservedPercent !== null && !devMode) {
+    applyPhysicalVolume(lastObservedPercent, Date.now(), true);
+  }
+}
+
 // ── Sink event watcher ─────────────────────────────────────────────────
 // audio.ts already runs `pactl subscribe` for mono/stereo purposes.
 // Rather than a second subscribe process, we listen on the radioState
@@ -180,26 +292,39 @@ function pollADC(): void {
 
   // Smooth and check if percent actually changed
   const percent = smoothedPercent(raw);
+  lastObservedPercent = percent;
 
-  if (
-    lastAppliedPercent === null ||
-    Math.abs(percent - lastAppliedPercent) >= CHANGE_THRESHOLD
-  ) {
-    // Debounce the "Setting volume" log so rapid pot movement doesn't spam.
-    if (now - lastLogTime >= LOG_DEBOUNCE_MS) {
-      console.log(`[Volume] Setting volume to ${applyCurve(percent)}% (knob ${percent}%)`);
-      lastLogTime = now;
-    }
-    lastAppliedPercent = percent;
+  if (spotifyTakeoverTarget !== null && spotifyBandActive()) {
+    const knobVolume = applyCurve(percent);
+    const previous = previousPickupVolume;
+    const closeEnough = Math.abs(knobVolume - spotifyTakeoverTarget) <= PICKUP_TOLERANCE;
+    const crossed =
+      previous !== null &&
+      (previous - spotifyTakeoverTarget) * (knobVolume - spotifyTakeoverTarget) <= 0;
+    previousPickupVolume = knobVolume;
+    if (!closeEnough && !crossed) return;
 
-    // Update state with the real PA volume (broadcasts to web UI)
-    radioState.setVolume(applyCurve(percent));
-
-    // Set PulseAudio volume on all sinks
-    setAllSinksVolume(percent).catch((err) =>
-      console.warn(`[Volume] Failed to set volume: ${err}`)
-    );
+    console.log(`[Volume] Physical knob picked up at ${knobVolume}%`);
+    spotifyTakeoverTarget = null;
+    applyPhysicalVolume(percent, now, true);
+    return;
   }
+
+  const delta = lastAppliedPercent === null ? Infinity : Math.abs(percent - lastAppliedPercent);
+  if (delta < CHANGE_THRESHOLD) {
+    candidatePercent = null;
+    return;
+  }
+  if (delta >= FAST_CHANGE_THRESHOLD) {
+    applyPhysicalVolume(percent, now);
+    return;
+  }
+  if (candidatePercent === null || Math.abs(percent - candidatePercent) > 1) {
+    candidatePercent = percent;
+    candidateSince = now;
+    return;
+  }
+  if (now - candidateSince >= STABLE_CHANGE_MS) applyPhysicalVolume(percent, now);
 }
 
 // ── Public API ─────────────────────────────────────────────────────────
@@ -226,13 +351,14 @@ export function initVolume(): void {
 
   const percent = rawToPercent(initial);
   lastAppliedPercent = percent;
+  lastObservedPercent = percent;
 
   console.log(
     `[Volume] Connected — initial reading: raw=${initial} (${percent}%)`
   );
 
   // Set initial volume in state and PulseAudio
-  radioState.setVolume(applyCurve(percent));
+  radioState.setVolume(applyCurve(percent), "knob");
   setAllSinksVolume(percent).catch((err) =>
     console.warn(`[Volume] Failed to set initial volume: ${err}`)
   );
@@ -240,6 +366,8 @@ export function initVolume(): void {
   // Listen for mode changes to re-apply volume on new sinks
   radioState.on("mode:bluetooth", onStateChange);
   radioState.on("mode:radio", onStateChange);
+  radioState.on("band:change", onBandChange);
+  unsubscribeSpotifyVolume = onSpotifyVolumeChanged(onSpotifyVolume);
 
   // Start polling
   pollTimer = setInterval(pollADC, POLL_INTERVAL_MS);
@@ -256,7 +384,7 @@ export async function setVolumeSoftware(paPercent: number): Promise<void> {
   const clamped = Math.max(0, Math.min(100, Math.round(paPercent)));
   // Reverse the curve to find a knob% that produces this PA%, then set sinks
   // For simplicity, just set sinks directly at the requested PA% and update state
-  radioState.setVolume(clamped);
+  radioState.setVolume(clamped, "software");
   const sinks = await listAllSinks();
   const volArg = `${clamped}%`;
   for (const sink of sinks) {
@@ -274,7 +402,9 @@ export async function resetVolumeToPhysical(): Promise<void> {
   for (let i = 0; i < SMOOTH_WINDOW; i++) rawHistory.push(raw);
   const percent = rawToPercent(raw);
   lastAppliedPercent = percent;
-  radioState.setVolume(applyCurve(percent));
+  lastObservedPercent = percent;
+  spotifyTakeoverTarget = null;
+  radioState.setVolume(applyCurve(percent), "knob");
   await setAllSinksVolume(percent);
   console.log(`[Volume] Reset to physical pot: raw=${raw} (${percent}%)`);
 }
@@ -286,6 +416,9 @@ export function stopVolume(): void {
   }
   radioState.removeListener("mode:bluetooth", onStateChange);
   radioState.removeListener("mode:radio", onStateChange);
+  radioState.removeListener("band:change", onBandChange);
+  unsubscribeSpotifyVolume?.();
+  unsubscribeSpotifyVolume = null;
   if (!devMode) {
     console.log("[Volume] Stopped");
   }
