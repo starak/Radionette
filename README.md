@@ -297,6 +297,7 @@ The WiFi settings page is always available at `http://radionette.local:8080/wifi
 | PUT | `/api/settings/display-mapping` | Save per-radio display nibbles |
 | PUT | `/api/settings/tint` | Save and apply the default tint |
 | PUT | `/api/settings/spotify` | Save the private Spotify Soloist API key and per-radio band assignment |
+| DELETE | `/api/settings/spotify` | Clear the private Soloist API key while preserving the band assignment |
 | GET | `/api/settings/export` | Download a complete settings backup |
 | POST | `/api/settings/import` | Validate and import a settings backup |
 

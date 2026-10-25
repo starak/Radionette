@@ -40,6 +40,7 @@ import {
   verifySettingsSession,
 } from "./settings-security";
 import {
+  clearSpotifyApiKey,
   getSpotifyBandOrdinal,
   getSpotifySettingsStatus,
   saveSpotifyApiKey,
@@ -388,6 +389,17 @@ export function startWebServer(): void {
         sendJson(res, 200, { success: true, spotify });
       } catch (err: any) {
         sendJson(res, 400, { success: false, error: err.message });
+      }
+      return;
+    }
+
+    if (req.url === "/api/settings/spotify" && req.method === "DELETE") {
+      try {
+        const spotify = clearSpotifyApiKey();
+        restartSpotifyConnect();
+        sendJson(res, 200, { success: true, spotify });
+      } catch (err: any) {
+        sendJson(res, 500, { success: false, error: err.message });
       }
       return;
     }

@@ -210,6 +210,19 @@
       notify((e as Error).message, false);
     }
   }
+  async function clearSpotifyKey() {
+    if (!model?.spotify.configured) return;
+    if (!confirm("Clear the Spotify Soloist API key from this radio?")) return;
+    try {
+      const r: any = await api("/api/settings/spotify", { method: "DELETE" });
+      model.spotify = r.spotify;
+      spotifyApiKey = "";
+      model = { ...model };
+      notify("Spotify API key cleared");
+    } catch (e) {
+      notify((e as Error).message, false);
+    }
+  }
   async function importSettings() {
     if (!importFile) return notify("Choose a JSON backup first", false);
     if (!confirm("Replace this radio's local settings?")) return;
@@ -355,6 +368,9 @@
         </label>
         <div class="actions">
           <button class="primary" on:click={saveSpotify}>Save Spotify settings</button>
+          <button class="danger" disabled={!model.spotify.configured} on:click={clearSpotifyKey}
+            >Clear Spotify key</button
+          >
           <span class="pill">{model.spotify.configured ? "Configured" : "Not configured"}</span>
         </div>
         <small>The key stays on this radio and is excluded from settings exports.</small>

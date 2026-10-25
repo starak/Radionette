@@ -66,6 +66,13 @@ export function saveSpotifyApiKey(value: unknown): SpotifySettingsStatus {
   return getSpotifySettingsStatus();
 }
 
+export function clearSpotifyApiKey(): SpotifySettingsStatus {
+  const { apiKey: _removed, ...remaining } = readSettings();
+  writeSettings(remaining);
+  console.log("[Spotify] Soloist API key cleared");
+  return getSpotifySettingsStatus();
+}
+
 export function saveSpotifyBandOrdinal(value: unknown): SpotifySettingsStatus {
   if (!Number.isInteger(value) || (value as number) < 1) {
     throw new Error("Spotify band must be a positive band ordinal");
