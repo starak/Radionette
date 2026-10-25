@@ -39,7 +39,12 @@ import {
   verifySettingsPin,
   verifySettingsSession,
 } from "./settings-security";
-import { getSpotifySettingsStatus, saveSpotifyApiKey } from "./spotify-settings";
+import {
+  getSpotifyBandOrdinal,
+  getSpotifySettingsStatus,
+  saveSpotifyApiKey,
+  saveSpotifyBandOrdinal,
+} from "./spotify-settings";
 import { restartSpotifyConnect } from "./spotify-connect";
 
 const PORT = 8080;
@@ -141,6 +146,7 @@ function getStatusPayload(): string {
     displayTint: getDisplayTint(),
     displayOptions: getDisplayOptions(),
     tuner: tunerStatus(),
+    spotifyBand: getSpotifyBandOrdinal(),
   });
 }
 
@@ -367,8 +373,17 @@ export function startWebServer(): void {
 
     if (req.url === "/api/settings/spotify" && req.method === "PUT") {
       try {
-        const { apiKey } = await readJsonBody(req, 10_000);
-        const spotify = saveSpotifyApiKey(apiKey);
+        const { apiKey, bandOrdinal } = await readJsonBody(req, 10_000);
+        let spotify = getSpotifySettingsStatus();
+        if (bandOrdinal !== undefined) {
+          if (!getAllBands().some((band) => band.ordinal === bandOrdinal)) {
+            throw new Error(`Unknown Spotify band ${bandOrdinal}`);
+          }
+        }
+        if (typeof apiKey === "string" && apiKey.trim()) spotify = saveSpotifyApiKey(apiKey);
+        if (bandOrdinal !== undefined) {
+          spotify = saveSpotifyBandOrdinal(bandOrdinal);
+        }
         restartSpotifyConnect();
         sendJson(res, 200, { success: true, spotify });
       } catch (err: any) {
@@ -388,12 +403,26 @@ export function startWebServer(): void {
           ? null
           : validateDisplayMapping(value.displayMapping);
         const preferences = validateDisplayPreferences(value.displayPreferences);
+        const requestedSpotifyBand = value.spotify?.bandOrdinal;
+        const currentSpotifyBand = getSpotifyBandOrdinal();
+        const spotifyBand =
+          requestedSpotifyBand ??
+          (channels.bands.some((band) => band.ordinal === currentSpotifyBand)
+            ? currentSpotifyBand
+            : channels.bands.some((band) => band.ordinal === 4)
+              ? 4
+              : channels.bands[channels.bands.length - 1]?.ordinal);
+        if (!channels.bands.some((band) => band.ordinal === spotifyBand)) {
+          throw new Error(`Spotify band ${spotifyBand} is not present in the imported bands`);
+        }
         saveChannelsConfig(channels);
         saveBandMapping(bandMapping);
         if (displayMapping) saveDisplayMapping(displayMapping);
         else clearDisplayMapping();
         const tint = saveDefaultTint(preferences);
+        saveSpotifyBandOrdinal(spotifyBand);
         await setDisplayTint(tint);
+        restartSpotifyConnect();
         resetGpioOverride();
         broadcast(getStatusPayload());
         sendJson(res, 200, { success: true, settings: getSettingsBundle() });

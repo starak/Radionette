@@ -59,7 +59,7 @@ initAudio();
 //     transitions can trigger it.
 initStaticNoise();
 
-// 5c. Spotify Connect is exposed only while logical Band 4 is selected.
+// 5c. Spotify Connect is exposed only while the configured logical band is selected.
 //     Initialize before GPIO so the first selector reading is observed.
 initSpotifyConnect();
 

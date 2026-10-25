@@ -194,11 +194,13 @@
   }
   async function saveSpotify() {
     if (!model) return;
-    if (!spotifyApiKey.trim()) return notify("Paste a Spotify Soloist API key first", false);
     try {
       const r: any = await api("/api/settings/spotify", {
         method: "PUT",
-        body: JSON.stringify({ apiKey: spotifyApiKey }),
+        body: JSON.stringify({
+          ...(spotifyApiKey.trim() ? { apiKey: spotifyApiKey } : {}),
+          bandOrdinal: model.spotify.bandOrdinal,
+        }),
       });
       model.spotify = r.spotify;
       spotifyApiKey = "";
@@ -343,8 +345,16 @@
             bind:value={spotifyApiKey}
           />
         </label>
+        <label>
+          Spotify band
+          <select bind:value={model.spotify.bandOrdinal}>
+            {#each model.channels.bands as band}
+              <option value={band.ordinal}>{band.name} · Band {band.ordinal}</option>
+            {/each}
+          </select>
+        </label>
         <div class="actions">
-          <button class="primary" on:click={saveSpotify}>Save Spotify key</button>
+          <button class="primary" on:click={saveSpotify}>Save Spotify settings</button>
           <span class="pill">{model.spotify.configured ? "Configured" : "Not configured"}</span>
         </div>
         <small>The key stays on this radio and is excluded from settings exports.</small>

@@ -6,7 +6,7 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 
 - **Radio mode:** A rotary switch selects a band (e.g. Norsk, BBC) and a magnetic angle sensor on the tuning needle picks a station within the band. 30+ internet radio streams (HTTP MP3/icecast and HLS). Audio plays through the Pi's 3.5mm jack or HDMI.
 - **Bluetooth mode:** The Pi becomes a discoverable Bluetooth speaker called "Radionette" (with a speaker icon on your phone). Pair and stream music from any device.
-- **Spotify Connect:** Selecting logical Band 4 advertises a Spotify Connect speaker called "Radionette". Pick it in Spotify, start a Jam on the phone, and let guests manage the shared queue. Leaving Band 4 stops the Connect speaker so it cannot overlap an internet station.
+- **Spotify Connect:** Selecting the per-radio Spotify band advertises a Spotify Connect speaker called "Radionette". Pick it in Spotify, start a Jam on the phone, and let guests manage the shared queue. Leaving that band stops the Connect speaker so it cannot overlap an internet station. The factory/default assignment is Band 4; Minuett uses Band 5.
 - **Soft-takeover volume:** In Spotify mode, either the phone or physical knob can set volume. Phone changes take control immediately; the knob picks up smoothly when it reaches the selected level. Robust trimmed-mean filtering prevents stationary-pot jitter.
 - **Spotify now playing and queue:** Soloist's local WebSocket feed supplies authoritative play/pause state, artist, title, cover art, and up to 30 upcoming context/Jam/autoplay entries to the web dashboard. The round display uses cover art when its physical mode allows artwork, with the Spotify logo as the idle/logo-only fallback.
 - **Round-panel display:** A GC9A01 1.28" round IPS display shows the current channel logo, or dynamically-fetched album art matching the current song from iTunes Search. Channels without a proper logo file get a synthesised text-tile logo.
@@ -238,18 +238,18 @@ Both target commands accept the dependency flags, for example `npm run deploy:ra
 - Open `http://radionette.local:8080/` in a browser — you should see the status page
 - Turn the dial — the station should change and audio should play
 - Switch to Bluetooth mode — "Radionette" should appear as a speaker on your phone
-- Select Spotify (Band 4), open Spotify's device picker, and choose "Radionette"
+- Select the configured Spotify band, open Spotify's device picker, and choose "Radionette"
 
 ### Spotify Connect and Jam
 
-`setup-pi.sh` installs Spotify's official Soloist client, which uses the current PulseAudio default sink including the radio's mono/stereo routing. In the PIN-protected Settings page, add a private Soloist API key generated at `https://developer.spotify.com/dashboard/soloist`. The key is stored only in `~/.radionette/spotify.json` with private permissions and is excluded from settings exports.
+`setup-pi.sh` installs Spotify's official Soloist client, which uses the current PulseAudio default sink including the radio's mono/stereo routing. In the PIN-protected Settings page, add a private Soloist API key generated at `https://developer.spotify.com/dashboard/soloist` and choose the logical band assigned to Spotify. The key and band assignment are stored in `~/.radionette/spotify.json` with private permissions; the secret key is excluded from settings exports.
 
-1. Turn the physical selector to **Spotify** (logical Band 4).
+1. Turn the physical selector to the configured **Spotify** band (Band 4 by default; Band 5 on Minuett).
 2. Open Spotify on a phone on the same WiFi network.
 3. Choose **Radionette** in the device picker and start playback.
 4. Start and share the Jam from Spotify's normal Jam controls.
 
-The Connect speaker exists only while Band 4 is selected. Changing band, entering Bluetooth mode, or powering the radio off terminates it. A Spotify Premium account is required to generate the Soloist key; after setup, Spotify supports both Free and Premium listeners according to its current Connect and Jam rules. Soloist builds expire after 90 days, so rerun `setup-pi.sh` periodically to install Spotify's current build.
+The Connect speaker exists only while the configured Spotify band is selected. Changing band, entering Bluetooth mode, or powering the radio off terminates it. A Spotify Premium account is required to generate the Soloist key; after setup, Spotify supports both Free and Premium listeners according to its current Connect and Jam rules. Soloist builds expire after 90 days, so rerun `setup-pi.sh` periodically to install Spotify's current build.
 
 ## WiFi Configuration
 
@@ -296,7 +296,7 @@ The WiFi settings page is always available at `http://radionette.local:8080/wifi
 | PUT | `/api/settings/band-mapping` | Save per-radio band nibbles |
 | PUT | `/api/settings/display-mapping` | Save per-radio display nibbles |
 | PUT | `/api/settings/tint` | Save and apply the default tint |
-| PUT | `/api/settings/spotify` | Save the private Spotify Soloist API key |
+| PUT | `/api/settings/spotify` | Save the private Spotify Soloist API key and per-radio band assignment |
 | GET | `/api/settings/export` | Download a complete settings backup |
 | POST | `/api/settings/import` | Validate and import a settings backup |
 
@@ -322,6 +322,7 @@ Some files contain settings specific to this setup that you'll want to adapt:
 
 - **`deploy.sh`** — Targets Radionette by default. Set `RADIONETTE_REMOTE` to another SSH destination, or use the `deploy:minuett` / `deploy:radionette` npm commands. The Node.js path is detected automatically.
 - **`channels.json`** — Pre-configured with Norwegian radio stations (NRK, P4, etc.). Replace with your own station URLs.
+- **`~/.radionette/spotify.json`** — Private Soloist API key plus the logical Spotify band. Managed through Settings; defaults to Band 4 when `bandOrdinal` is absent.
 - **`src/bluetooth.ts`** — PulseAudio commands (`paplay`, `pactl`) run natively as the `pi` user. The `rfkill` command runs via `sudo`. No manual changes needed.
 
 ### Per-radio band mapping
@@ -390,7 +391,7 @@ Use the PIN-protected `/settings` page for per-radio station editing. It stores 
 - **`id`** is a stable string identifier used in logs and in the state broadcast.
 - **`logo`** is a filename (PNG or GIF) under `assets/channel-logos/`. If omitted (or the file is missing), the display service generates a text-only fallback logo with a black background and centred white station name.
 
-There is **no cap** on channels per band — 4 channels or 40, the needle fills the full sweep either way. Bands with no channels are silent, except logical Band 4 which is reserved for the Spotify Connect input. Physical rotary positions whose hardware nibble doesn't match any declared band are also silent.
+There is **no cap** on channels per band — 4 channels or 40, the needle fills the full sweep either way. Bands with no channels are silent, except the logical band selected under **Settings → Spotify Connect**, which is reserved for Soloist. Physical rotary positions whose hardware nibble doesn't match any declared band are also silent.
 
 **Supported stream types:**
 
@@ -407,7 +408,8 @@ radionette/
     gpio.ts              # GPIO polling, debounce, LED control
     channels.ts          # channels.json loader; bands + channels indexes
     player.ts            # mpg123 (MP3) / ffmpeg (HLS) child process management
-    spotify-connect.ts   # Band-4-gated official Spotify Soloist process
+    spotify-connect.ts   # Configured-band-gated Spotify Soloist + local API bridge
+    spotify-settings.ts  # Private API key + per-radio Spotify band
     bluetooth.ts         # Bluetooth A2DP sink management
     audio.ts             # Mono/stereo mixing (PulseAudio remap-sink)
     adc.ts               # Shared ADS1115 access on /dev/i2c-1

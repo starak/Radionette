@@ -2,10 +2,7 @@ import { ChildProcess, spawn } from "child_process";
 import WebSocket from "ws";
 import { radionetteConfigPath } from "./config-storage";
 import { radioState, SpotifyQueueItem } from "./state";
-import { getSpotifyApiKey } from "./spotify-settings";
-
-/** Logical Band 4 is reserved for the Spotify Connect input. */
-export const SPOTIFY_BAND_ORDINAL = 4;
+import { getSpotifyApiKey, getSpotifyBandOrdinal } from "./spotify-settings";
 
 const COMMAND = process.env.RADIONETTE_SPOTIFY_COMMAND || "/usr/local/bin/soloist";
 const DATA_DIR = process.env.RADIONETTE_SPOTIFY_DATA_DIR || radionetteConfigPath("soloist");
@@ -168,7 +165,7 @@ function connectSoloistSocket(): void {
 
 function shouldRun(): boolean {
   const state = radioState.state;
-  return state.power && state.mode === "radio" && state.selectedBand === SPOTIFY_BAND_ORDINAL;
+  return state.power && state.mode === "radio" && state.selectedBand === getSpotifyBandOrdinal();
 }
 
 function clearRetry(): void {
@@ -191,14 +188,18 @@ function start(): void {
   const apiKey = getSpotifyApiKey();
   if (!apiKey) {
     if (!missingKeyReported) {
-      console.warn("[Spotify] Band 4 selected, but no Soloist API key is configured in Settings");
+      console.warn(
+        `[Spotify] Band ${getSpotifyBandOrdinal()} selected, but no Soloist API key is configured in Settings`,
+      );
       missingKeyReported = true;
     }
     return;
   }
   missingKeyReported = false;
 
-  console.log("[Spotify] Band 4 selected — starting official Spotify Soloist speaker ‘Radionette’");
+  console.log(
+    `[Spotify] Band ${getSpotifyBandOrdinal()} selected — starting official Spotify Soloist speaker ‘Radionette’`,
+  );
   const child = spawn(COMMAND, [
     "--device-name", "Radionette",
     "--api-key", apiKey,
@@ -244,7 +245,7 @@ function stop(): void {
   const child = processHandle;
   if (!child) return;
   processHandle = null;
-  console.log("[Spotify] Leaving Band 4 — stopping Connect speaker");
+  console.log(`[Spotify] Leaving Band ${getSpotifyBandOrdinal()} — stopping Connect speaker`);
   try {
     child.kill("SIGTERM");
   } catch {
@@ -266,7 +267,7 @@ export function initSpotifyConnect(): void {
   radioState.on("mode:bluetooth", reconcile);
   radioState.on("band:change", reconcile);
   reconcile();
-  console.log("[Spotify] Official Soloist input initialized on logical Band 4");
+  console.log(`[Spotify] Official Soloist input initialized on logical Band ${getSpotifyBandOrdinal()}`);
 }
 
 export function restartSpotifyConnect(): void {

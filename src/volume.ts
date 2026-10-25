@@ -4,8 +4,8 @@ import { ADC_MUX_AIN0, isAdcReady, readAdcChannel } from "./adc";
 import {
   onSpotifyVolumeChanged,
   setSpotifyVolume,
-  SPOTIFY_BAND_ORDINAL,
 } from "./spotify-connect";
+import { getSpotifyBandOrdinal } from "./spotify-settings";
 
 // ── Tuning constants ───────────────────────────────────────────────────
 
@@ -160,7 +160,7 @@ async function setAllSinksPaVolume(paPercent: number): Promise<void> {
 
 function spotifyBandActive(): boolean {
   const state = radioState.state;
-  return state.power && state.mode === "radio" && state.selectedBand === SPOTIFY_BAND_ORDINAL;
+  return state.power && state.mode === "radio" && state.selectedBand === getSpotifyBandOrdinal();
 }
 
 function applyPhysicalVolume(percent: number, now = Date.now(), force = false): void {
@@ -232,7 +232,7 @@ function onSpotifyVolume(volume: number): void {
 
 function onBandChange(band: number): void {
   pendingSpotifyEcho = null;
-  if (band === SPOTIFY_BAND_ORDINAL) {
+  if (band === getSpotifyBandOrdinal()) {
     spotifySessionInitialized = false;
     return;
   }

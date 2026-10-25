@@ -66,6 +66,7 @@ export interface RadioStatus {
   displayOptions: DisplayOption[];
   logoOverride: string | null;
   tuner: TunerStatus;
+  spotifyBand: number;
 }
 export interface ChannelsConfig {
   bands: Band[];
@@ -84,7 +85,7 @@ export interface SettingsBundle {
   bandMapping: Record<string, number>;
   displayMapping: DisplayMapping | null;
   displayPreferences: { tint: { r: number; g: number; b: number } };
-  spotify: { configured: boolean; provider: "soloist" };
+  spotify: { configured: boolean; provider: "soloist"; bandOrdinal: number };
   rawGpio: number;
 }
 export interface WifiStatus {

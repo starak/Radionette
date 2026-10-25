@@ -15,7 +15,7 @@
   function getStation(v: RadioStatus | null) {
     if (!v?.power) return "Radionette";
     if (v.mode === "bluetooth") return v.bluetoothDevice || "Bluetooth";
-    if (v.selectedBand === 4) return "Spotify";
+    if (v.selectedBand === v.spotifyBand) return "Spotify";
     return v.channel?.name || "Radionette";
   }
 
@@ -26,7 +26,7 @@
     }
     // The web dashboard is not constrained by the physical display selector's
     // logo-only mode. Always prefer Soloist's authoritative cover artwork.
-    if (v.selectedBand === 4) return v.nowPlayingArtwork?.url || "/logos/spotify.svg";
+    if (v.selectedBand === v.spotifyBand) return v.nowPlayingArtwork?.url || "/logos/spotify.svg";
     if (v.nowPlayingArtwork?.url && ["auto-artwork", "always-artwork"].includes(v.displayMode)) {
       return v.nowPlayingArtwork.url;
     }
@@ -39,7 +39,7 @@
     if (v.mode === "bluetooth") {
       return v.bluetoothDevice ? "Connected and ready" : "Waiting for a device…";
     }
-    if (v.selectedBand === 4)
+    if (v.selectedBand === v.spotifyBand)
       return v.metadata || "Select Radionette in the Spotify app, then start a Jam";
     if (v.channel) return v.metadata || "Waiting for now-playing information…";
     return "No station selected";
@@ -47,7 +47,8 @@
   function eyebrow(v: RadioStatus | null) {
     if (!v?.power) return "Radio offline";
     if (v.mode === "bluetooth") return "Bluetooth";
-    if (v.selectedBand === 4) return v.playing ? "Now playing · Spotify" : "Spotify Connect";
+    if (v.selectedBand === v.spotifyBand)
+      return v.playing ? "Now playing · Spotify" : "Spotify Connect";
     return v.playing ? "Now playing" : "Tuned";
   }
 </script>
@@ -68,7 +69,7 @@
         <div class="eyebrow">{eyebrow(s)}</div>
         <h1>{station}</h1>
         <div class="track">{track(s)}</div>
-        {#if s?.selectedBand !== 4}
+        {#if s?.selectedBand !== s?.spotifyBand}
           <div class="sub">
             {s?.nowPlayingArtwork
               ? `${s.nowPlayingArtwork.artist} · ${s.nowPlayingArtwork.title}`
@@ -90,7 +91,7 @@
         </div>
       </div>
     </section>
-    {#if s?.selectedBand === 4 && s.spotifyQueue?.length}
+    {#if s && s.selectedBand === s.spotifyBand && s.spotifyQueue.length}
       <div class="section-title">Up next</div>
       <section class="card queue">
         {#each s.spotifyQueue as item, index (item.uid)}
