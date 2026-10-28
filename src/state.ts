@@ -171,6 +171,16 @@ class RadioStateEmitter extends EventEmitter {
     this.emitStateChange();
   }
 
+  /** Re-apply edited data for the currently selected channel, even when its stable ID is unchanged. */
+  refreshChannel(channel: ChannelInfo): void {
+    if (this._state.mode !== "radio" || this._state.channel?.id !== channel.id) return;
+    this._state.channel = channel;
+    this._state.metadata = null;
+    this._state.nowPlayingArtwork = null;
+    this.emit("channel:change", channel);
+    this.emitStateChange();
+  }
+
   setPlaying(playing: boolean, channel?: ChannelInfo): void {
     this._state.playing = playing;
     if (playing && channel) {

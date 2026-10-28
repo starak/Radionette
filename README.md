@@ -15,6 +15,7 @@ An internet radio built with a Raspberry Pi. Turn a physical dial to switch betw
 - **WiFi configuration:** If the Pi can't connect to a known WiFi network at boot, it creates an open hotspot (`Radionette-Setup`, no password). Connect to the hotspot and visit `http://10.42.0.1:8080/wifi` to configure a network. WiFi settings are also always accessible at `http://radionette.local:8080/wifi` when connected to the same network.
 - **Debug page:** A live view of GPIO bit state, current band, tuner needle position with per-band wedge markers, full state dump, and grouped channel map at `http://radionette.local:8080/debug`. Includes a virtual dial for switching bands from the browser, tuner calibration buttons, WiFi reset and system reboot controls.
 - **Settings page:** Per-radio station, band, hardware-mapping and display-tint editor at `http://radionette.local:8080/settings`, with validated import/export backups. Settings live under `~/.radionette/` and survive deployments.
+- **Custom station logos:** Upload PNG, JPEG or GIF logos directly from the station editor. Uploaded files live under `~/.radionette/channel-logos/`, override factory assets with the same reference, and are included in settings exports.
 - **Hotspot bleep alert:** When the Pi is in radio mode and the hotspot is active (no WiFi configured), a periodic bleep sounds through the speaker to alert the user to set up WiFi.
 - **Auto-retry playback:** If the radio stream fails (e.g. no internet during hotspot mode), the player retries with escalating backoff (5s, 10s, 30s). Playback also resumes automatically when WiFi is configured via the settings page.
 
@@ -293,6 +294,7 @@ The WiFi settings page is always available at `http://radionette.local:8080/wifi
 | POST | `/api/settings/logout` | End the current settings session |
 | PUT | `/api/settings/pin` | Change the settings PIN and invalidate all sessions |
 | PUT | `/api/settings/channels` | Save bands and stations |
+| POST | `/api/settings/logo` | Upload a validated PNG/JPEG/GIF station logo (maximum 4 MB) |
 | PUT | `/api/settings/band-mapping` | Save per-radio band nibbles |
 | PUT | `/api/settings/display-mapping` | Save per-radio display nibbles |
 | PUT | `/api/settings/tint` | Save and apply the default tint |
@@ -324,6 +326,7 @@ Some files contain settings specific to this setup that you'll want to adapt:
 - **`deploy.sh`** — Targets Radionette by default. Set `RADIONETTE_REMOTE` to another SSH destination, or use the `deploy:minuett` / `deploy:radionette` npm commands. The Node.js path is detected automatically.
 - **`channels.json`** — Pre-configured with Norwegian radio stations (NRK, P4, etc.). Replace with your own station URLs.
 - **`~/.radionette/spotify.json`** — Private Soloist API key plus the logical Spotify band. Managed through Settings; defaults to Band 4 when `bandOrdinal` is absent.
+- **`~/.radionette/channel-logos/`** — Per-radio uploaded station logos. These survive deployment and are included as base64 data in exported settings backups.
 - **`src/bluetooth.ts`** — PulseAudio commands (`paplay`, `pactl`) run natively as the `pi` user. The `rfkill` command runs via `sudo`. No manual changes needed.
 
 ### Per-radio band mapping
@@ -390,7 +393,8 @@ Use the PIN-protected `/settings` page for per-radio station editing. It stores 
 - **Bands** are the physical rotary switch positions. `ordinal` is the logical band number used in code and UI. `hardware` is the raw top-nibble (0..15) the physical rotary produces for this band. `name` is a human label.
 - **Channels** each reference a `band` ordinal and carry an `order` value that decides where the station falls on the tuner's needle sweep — the AS5600 divides the sweep into equal wedges (one per channel in the current band) and stations are laid out in increasing `order` from the CCW end to the CW end. Sparse values (10, 20, 30, ...) let you insert new stations between existing ones without renumbering.
 - **`id`** is a stable string identifier used in logs and in the state broadcast.
-- **`logo`** is a filename (PNG or GIF) under `assets/channel-logos/`. If omitted (or the file is missing), the display service generates a text-only fallback logo with a black background and centred white station name.
+- **`logo`** is a filename under the per-radio upload directory or `assets/channel-logos/`. If omitted (or the file is missing), the display service generates a text-only fallback logo with a black background and centred white station name.
+- In the Settings station editor, **Upload** accepts PNG, JPEG and GIF files up to 4 MB. Uploading fills the station's `logo` field; click **Save bands and stations** to assign it. Per-radio uploads take precedence over repository assets.
 
 There is **no cap** on channels per band — 4 channels or 40, the needle fills the full sweep either way. Bands with no channels are silent, except the logical band selected under **Settings → Spotify Connect**, which is reserved for Soloist. Physical rotary positions whose hardware nibble doesn't match any declared band are also silent.
 
@@ -408,6 +412,7 @@ radionette/
     state.ts             # Central state machine + event emitter
     gpio.ts              # GPIO polling, debounce, LED control
     channels.ts          # channels.json loader; bands + channels indexes
+    channel-logos.ts     # Persistent custom-logo upload, validation and backup
     player.ts            # mpg123 (MP3) / ffmpeg (HLS) child process management
     spotify-connect.ts   # Configured-band-gated Spotify Soloist + local API bridge
     spotify-settings.ts  # Private API key + per-radio Spotify band

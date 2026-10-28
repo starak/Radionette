@@ -1,9 +1,19 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import AppShell from "../components/AppShell.svelte";
   import { api } from "../lib/api";
   import { navigate } from "../lib/router";
   let pin = "",
     error = "";
+  let pinInput: HTMLInputElement;
+
+  onMount(() => {
+    // Avoid summoning the on-screen keyboard on phones/tablets. Fine-pointer,
+    // hover-capable devices are desktop/laptop-style input environments.
+    if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
+      pinInput.focus({ preventScroll: true });
+    }
+  });
   async function login() {
     error = "";
     try {
@@ -22,6 +32,7 @@
       <h2>Settings</h2>
       <p>Enter the administration PIN.</p>
       <input
+        bind:this={pinInput}
         bind:value={pin}
         type="password"
         inputmode="numeric"

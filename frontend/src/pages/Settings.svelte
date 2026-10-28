@@ -96,6 +96,29 @@
       notify((e as Error).message, false);
     }
   }
+  async function uploadStationLogo(index: number, file: File) {
+    if (!model) return;
+    if (file.size > 4_000_000) return notify("Logo must be 4 MB or smaller", false);
+    const channel = model.channels.channels[index];
+    if (!channel?.id.trim()) return notify("Enter a station ID before uploading a logo", false);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || "").split(",")[1] || "");
+        reader.onerror = () => reject(new Error("Could not read logo file"));
+        reader.readAsDataURL(file);
+      });
+      const r: any = await api("/api/settings/logo", {
+        method: "POST",
+        body: JSON.stringify({ channelId: channel.id, base64 }),
+      });
+      channel.logo = r.filename;
+      touch();
+      notify("Logo uploaded — save bands and stations to assign it");
+    } catch (e) {
+      notify((e as Error).message, false);
+    }
+  }
   async function capture(which: "band" | keyof DisplayMapping, ordinal?: number) {
     if (!model) return;
     try {
@@ -269,6 +292,7 @@
         onAdd={addStation}
         onRemove={removeStation}
         onSave={saveStations}
+        onUploadLogo={uploadStationLogo}
       />
       <div class="grid">
         <section class="card">

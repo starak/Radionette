@@ -11,6 +11,7 @@ import * as os from "os";
 import * as path from "path";
 import { spawn } from "child_process";
 import { rgba8888ToRgb565, solidFrame, WIDTH, HEIGHT } from "./frame";
+import { customLogoPath } from "../channel-logos";
 
 export interface RenderedFrame {
   rgb565: Buffer;
@@ -39,6 +40,10 @@ export function configureLogos(o: LogoLoaderOptions): void {
 
 export function resolveLogoPath(ref: string | undefined | null): string | null {
   if (!ref) return null;
+  if (!path.isAbsolute(ref)) {
+    const custom = customLogoPath(ref);
+    if (custom) return custom;
+  }
   const abs = path.isAbsolute(ref) ? ref : path.join(opts.logoDir, ref);
   return fs.existsSync(abs) ? abs : null;
 }

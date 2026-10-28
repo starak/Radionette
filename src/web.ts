@@ -47,6 +47,13 @@ import {
   saveSpotifyBandOrdinal,
 } from "./spotify-settings";
 import { restartSpotifyConnect } from "./spotify-connect";
+import {
+  customLogoPath,
+  exportCustomLogos,
+  importCustomLogos,
+  saveUploadedLogo,
+  validateCustomLogosBackup,
+} from "./channel-logos";
 
 const PORT = 8080;
 
@@ -125,7 +132,7 @@ function readJsonBody(req: http.IncomingMessage, maxBytes = 2_000_000): Promise<
   });
 }
 
-function getSettingsBundle(): object {
+function getSettingsBundle(includeCustomLogos = false): object {
   return {
     version: 1,
     channels: getChannelsConfig(),
@@ -134,6 +141,7 @@ function getSettingsBundle(): object {
     displayPreferences: getDisplayPreferences(),
     spotify: getSpotifySettingsStatus(),
     rawGpio: radioState.state.rawGpio,
+    ...(includeCustomLogos ? { customLogos: exportCustomLogos() } : {}),
   };
 }
 
@@ -191,11 +199,18 @@ export function startWebServer(): void {
       const requested = decodeURIComponent(req.url.slice("/logos/".length));
       const filename = path.basename(requested);
       if (!filename || filename !== requested) { res.writeHead(400); res.end(); return; }
-      const logoPath = path.resolve(process.cwd(), "assets", "channel-logos", filename);
+      const logoPath =
+        customLogoPath(filename) || path.resolve(process.cwd(), "assets", "channel-logos", filename);
       fs.readFile(logoPath, (err, data) => {
         if (err) { res.writeHead(404); res.end(); return; }
         const ext = path.extname(filename).toLowerCase();
-        const type = ext === ".gif" ? "image/gif" : ext === ".svg" ? "image/svg+xml" : "image/png";
+        const type = ext === ".gif"
+          ? "image/gif"
+          : ext === ".svg"
+            ? "image/svg+xml"
+            : ext === ".jpg" || ext === ".jpeg"
+              ? "image/jpeg"
+              : "image/png";
         res.writeHead(200, { "Content-Type": type, "Cache-Control": "public, max-age=3600" });
         res.end(data);
       });
@@ -316,7 +331,7 @@ export function startWebServer(): void {
         "Content-Type": "application/json",
         "Content-Disposition": `attachment; filename="radionette-settings-${new Date().toISOString().slice(0, 10)}.json"`,
       });
-      res.end(`${JSON.stringify(getSettingsBundle(), null, 2)}\n`);
+      res.end(`${JSON.stringify(getSettingsBundle(true), null, 2)}\n`);
       return;
     }
 
@@ -324,6 +339,11 @@ export function startWebServer(): void {
       try {
         const value = await readJsonBody(req);
         const saved = saveChannelsConfig(value);
+        const activeId = radioState.state.channel?.id;
+        if (activeId) {
+          const refreshed = channelById(activeId);
+          if (refreshed) radioState.refreshChannel(refreshed);
+        }
         resetGpioOverride();
         broadcast(getStatusPayload());
         sendJson(res, 200, { success: true, channels: saved });
@@ -333,9 +353,20 @@ export function startWebServer(): void {
       return;
     }
 
+    if (req.url === "/api/settings/logo" && req.method === "POST") {
+      try {
+        const { channelId, base64 } = await readJsonBody(req, 6_000_000);
+        const filename = saveUploadedLogo(channelId, base64);
+        sendJson(res, 200, { success: true, filename });
+      } catch (err: any) {
+        sendJson(res, 400, { success: false, error: err.message });
+      }
+      return;
+    }
+
     if (req.url === "/api/settings/band-mapping" && req.method === "PUT") {
       try {
-        const value = await readJsonBody(req);
+        const value = await readJsonBody(req, 50_000_000);
         const saved = saveBandMapping(value);
         resetGpioOverride();
         broadcast(getStatusPayload());
@@ -415,6 +446,7 @@ export function startWebServer(): void {
           ? null
           : validateDisplayMapping(value.displayMapping);
         const preferences = validateDisplayPreferences(value.displayPreferences);
+        const customLogos = validateCustomLogosBackup(value.customLogos);
         const requestedSpotifyBand = value.spotify?.bandOrdinal;
         const currentSpotifyBand = getSpotifyBandOrdinal();
         const spotifyBand =
@@ -433,6 +465,7 @@ export function startWebServer(): void {
         else clearDisplayMapping();
         const tint = saveDefaultTint(preferences);
         saveSpotifyBandOrdinal(spotifyBand);
+        importCustomLogos(customLogos);
         await setDisplayTint(tint);
         restartSpotifyConnect();
         resetGpioOverride();
