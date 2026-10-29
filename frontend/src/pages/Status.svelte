@@ -25,11 +25,9 @@
       return v.bluetoothDevice ? "/logos/bluetooth-connected.png" : "/logos/bluetooth.png";
     }
     // The web dashboard is not constrained by the physical display selector's
-    // logo-only mode. Always prefer Soloist's authoritative cover artwork.
-    if (v.selectedBand === v.spotifyBand) return v.nowPlayingArtwork?.url || "/logos/spotify.svg";
-    if (v.nowPlayingArtwork?.url && ["auto-artwork", "always-artwork"].includes(v.displayMode)) {
-      return v.nowPlayingArtwork.url;
-    }
+    // logo-only mode. Always prefer available now-playing artwork.
+    if (v.nowPlayingArtwork?.url) return v.nowPlayingArtwork.url;
+    if (v.selectedBand === v.spotifyBand) return "/logos/spotify.svg";
     if (v.channel) return v.channel.logo ? `/logos/${encodeURIComponent(v.channel.logo)}` : null;
     return "/logos/default.png";
   }
